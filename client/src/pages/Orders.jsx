@@ -121,11 +121,11 @@ const Orders = () => {
             {pagination.total ?? 0} total order{pagination.total !== 1 ? 's' : ''}
           </p>
         </div>
-        {isManager() && (
-          <Link to="/orders/new" className="btn-primary">
-            + New Order
-          </Link>
-        )}
+        
+        {/* Removed isManager check so Staff can create orders */}
+        <Link to="/orders/new" className="btn-primary">
+          + New Order
+        </Link>
       </div>
 
       {/* Filters */}
@@ -152,11 +152,11 @@ const Orders = () => {
           <div className="p-12 text-center">
             <p className="text-3xl mb-2">🏭</p>
             <p className="text-gray-500 dark:text-gray-400 font-medium">No orders found.</p>
-            {isManager() && (
-              <Link to="/orders/new" className="mt-3 inline-block btn-primary text-sm">
-                Create your first order
-              </Link>
-            )}
+            
+            {/* Removed isManager check here too */}
+            <Link to="/orders/new" className="mt-3 inline-block btn-primary text-sm">
+              Create your first order
+            </Link>
           </div>
         ) : (
           <table className="w-full text-sm">

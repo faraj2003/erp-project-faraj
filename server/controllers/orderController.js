@@ -39,10 +39,10 @@ const getOrders = async (req, res, next) => {
     const [total, orders] = await Promise.all([
       Order.countDocuments(filter),
       Order.find(filter)
-        .populate("managerId", "name email role") // Expand manager details
-        .populate("inputs.itemId", "name sku unit") // Expand input item details
-        .populate("outputs.itemId", "name sku unit") // Expand output item details
-        .sort({ createdAt: -1 }) // Newest first
+        .populate("managerId", "name email role")
+        .populate("inputs.itemId", "name sku unit")
+        .populate("outputs.itemId", "name sku unit")
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
     ]);
@@ -71,14 +71,13 @@ const getOrders = async (req, res, next) => {
 // @access  Private (Managers & Admins only)
 const createOrder = async (req, res, next) => {
   try {
-    // ── NEW FIELD: Destructure notes from req.body ──
     const { orderNumber, notes, inputs, outputs } = req.body;
 
     const order = await Order.create({
       orderNumber,
       managerId: req.user._id,
       status: "Pending",
-      notes, // ── Save it to the database
+      notes,
       inputs,
       outputs,
     });
@@ -92,7 +91,7 @@ const createOrder = async (req, res, next) => {
   }
 };
 
-// @desc    Update order status and trigger inventory sync
+// @desc    Update order status and trigger inventory sync if completed
 // @route   PATCH /api/orders/:id/status
 // @access  Private (Managers & Admins only)
 const completeOrder = async (req, res, next) => {
@@ -100,13 +99,39 @@ const completeOrder = async (req, res, next) => {
   session.startTransaction();
 
   try {
+    // ── 1. Get the requested status from the frontend ──
+    const { status } = req.body;
+
     const order = await Order.findById(req.params.id).session(session);
 
     if (!order) throw new AppError("Order not found", 404);
-    if (order.status === "Completed")
-      throw new AppError("Order is already completed", 400);
 
-    // 1. Deduct Inputs (Raw Materials)
+    // Prevent modifying an order that is already finished
+    if (order.status === "Completed") {
+      throw new AppError(
+        "Order is already completed and cannot be changed",
+        400,
+      );
+    }
+    if (order.status === "Cancelled") {
+      throw new AppError("Order is cancelled and cannot be changed", 400);
+    }
+
+    // ── 2. If the user is just updating to "In Progress" or "Cancelled" ──
+    if (status !== "Completed") {
+      order.status = status;
+      await order.save({ session });
+      await session.commitTransaction();
+
+      logger.info(
+        `[Orders] Order status updated to ${status}: ${order.orderNumber}`,
+      );
+      return res.status(200).json({ success: true, data: order });
+    }
+
+    // ── 3. If the user selected "Completed", perform inventory math ──
+
+    // Deduct Inputs (Raw Materials)
     for (const input of order.inputs) {
       const item = await Item.findById(input.itemId).session(session);
       if (!item)
@@ -137,7 +162,7 @@ const completeOrder = async (req, res, next) => {
       );
     }
 
-    // 2. Add Outputs (Finished Goods)
+    // Add Outputs (Finished Goods)
     for (const output of order.outputs) {
       const item = await Item.findById(output.itemId).session(session);
       if (!item)
@@ -161,16 +186,16 @@ const completeOrder = async (req, res, next) => {
       );
     }
 
-    // 3. Mark Order Completed
+    // Mark Order Completed
     order.status = "Completed";
     await order.save({ session });
 
-    // 4. Commit the Transaction
+    // Commit the Transaction
     await session.commitTransaction();
 
     logger.info(`[Orders] Order completed: ${order.orderNumber}`);
 
-    // 5. Real-time broadcast — name matches TRD spec: 'inventory_updated'
+    // Real-time broadcast
     const io = req.app.get("io");
     if (io) {
       io.emit("inventory_updated", {

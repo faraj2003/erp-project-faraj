@@ -9,9 +9,15 @@ const mongoose = require("mongoose");
 const Transaction = require("../models/Transaction");
 const Item = require("../models/Item");
 const {
-  connectTestDB, disconnectTestDB, clearCollections,
-  getApp, generateToken, authHeader,
-  createUser, createItem, createOrder,
+  connectTestDB,
+  disconnectTestDB,
+  clearCollections,
+  getApp,
+  generateToken,
+  authHeader,
+  createUser,
+  createItem,
+  createOrder,
 } = require("./helpers/setup");
 
 let app;
@@ -41,14 +47,29 @@ describe("GET /api/orders", () => {
     const manager = await createUser({ role: "manager" });
     const token = generateToken(manager._id, "manager");
 
-    const rawMat = await createItem({ sku: "RM-001", type: "raw_material", currentStock: 500 });
-    const finGood = await createItem({ sku: "FG-001", type: "finished_good", currentStock: 0, minStockLevel: 0 });
+    const rawMat = await createItem({
+      sku: "RM-001",
+      type: "raw_material",
+      currentStock: 500,
+    });
+    const finGood = await createItem({
+      sku: "FG-001",
+      type: "finished_good",
+      currentStock: 0,
+      minStockLevel: 0,
+    });
 
     // Create 3 orders
     await Promise.all([
-      createOrder(manager._id, rawMat._id, finGood._id, { orderNumber: "PO-001" }),
-      createOrder(manager._id, rawMat._id, finGood._id, { orderNumber: "PO-002" }),
-      createOrder(manager._id, rawMat._id, finGood._id, { orderNumber: "PO-003" }),
+      createOrder(manager._id, rawMat._id, finGood._id, {
+        orderNumber: "PO-001",
+      }),
+      createOrder(manager._id, rawMat._id, finGood._id, {
+        orderNumber: "PO-002",
+      }),
+      createOrder(manager._id, rawMat._id, finGood._id, {
+        orderNumber: "PO-003",
+      }),
     ]);
 
     const res = await request(app)
@@ -65,11 +86,26 @@ describe("GET /api/orders", () => {
   it("filters by status", async () => {
     const manager = await createUser({ role: "manager" });
     const token = generateToken(manager._id, "manager");
-    const rawMat = await createItem({ sku: "RM-002", type: "raw_material", currentStock: 500 });
-    const finGood = await createItem({ sku: "FG-002", type: "finished_good", currentStock: 0, minStockLevel: 0 });
+    const rawMat = await createItem({
+      sku: "RM-002",
+      type: "raw_material",
+      currentStock: 500,
+    });
+    const finGood = await createItem({
+      sku: "FG-002",
+      type: "finished_good",
+      currentStock: 0,
+      minStockLevel: 0,
+    });
 
-    await createOrder(manager._id, rawMat._id, finGood._id, { orderNumber: "PO-PEND", status: "Pending" });
-    await createOrder(manager._id, rawMat._id, finGood._id, { orderNumber: "PO-CANC", status: "Cancelled" });
+    await createOrder(manager._id, rawMat._id, finGood._id, {
+      orderNumber: "PO-PEND",
+      status: "Pending",
+    });
+    await createOrder(manager._id, rawMat._id, finGood._id, {
+      orderNumber: "PO-CANC",
+      status: "Cancelled",
+    });
 
     const res = await request(app)
       .get("/api/orders?status=Pending")
@@ -84,29 +120,44 @@ describe("GET /api/orders", () => {
 // ── POST /api/orders ──────────────────────────────────────────────
 
 describe("POST /api/orders", () => {
-  it("returns 403 if staff tries to create order", async () => {
+  it("allows staff to successfully create a new order", async () => {
     const staff = await createUser({ role: "staff" });
     const token = generateToken(staff._id, "staff");
-    const rawMat = await createItem({ sku: "RM-003", type: "raw_material" });
-    const finGood = await createItem({ sku: "FG-003", type: "finished_good", minStockLevel: 0 });
+
+    // Create required inventory items for the order
+    const inputItem = await createItem({ type: "raw_material" });
+    const outputItem = await createItem({ type: "finished_good" });
+
+    const orderPayload = {
+      orderNumber: "PO-STAFF-001",
+      inputs: [{ itemId: inputItem._id, quantityRequired: 10 }],
+      outputs: [{ itemId: outputItem._id, quantityProduced: 5 }],
+      notes: "Started by night shift staff",
+    };
 
     const res = await request(app)
       .post("/api/orders")
       .set(authHeader(token))
-      .send({
-        orderNumber: "PO-STAFF",
-        inputs: [{ itemId: rawMat._id, quantityRequired: 10 }],
-        outputs: [{ itemId: finGood._id, quantityProduced: 5 }],
-      });
+      .send(orderPayload);
 
-    expect(res.status).toBe(403);
+    // Should be 201 now because of updated RBAC!
+    expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe("Pending");
   });
 
   it("creates an order successfully for manager", async () => {
     const manager = await createUser({ role: "manager" });
     const token = generateToken(manager._id, "manager");
-    const rawMat = await createItem({ sku: "RM-004", type: "raw_material", currentStock: 100 });
-    const finGood = await createItem({ sku: "FG-004", type: "finished_good", minStockLevel: 0 });
+    const rawMat = await createItem({
+      sku: "RM-004",
+      type: "raw_material",
+      currentStock: 100,
+    });
+    const finGood = await createItem({
+      sku: "FG-004",
+      type: "finished_good",
+      minStockLevel: 0,
+    });
 
     const res = await request(app)
       .post("/api/orders")
@@ -126,7 +177,11 @@ describe("POST /api/orders", () => {
   it("returns 400 on Zod validation failure (missing inputs)", async () => {
     const manager = await createUser({ role: "manager" });
     const token = generateToken(manager._id, "manager");
-    const finGood = await createItem({ sku: "FG-005", type: "finished_good", minStockLevel: 0 });
+    const finGood = await createItem({
+      sku: "FG-005",
+      type: "finished_good",
+      minStockLevel: 0,
+    });
 
     const res = await request(app)
       .post("/api/orders")
@@ -179,14 +234,14 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     // Verify stock was correctly adjusted in DB
     const updatedRaw = await Item.findById(rawMat._id);
     const updatedFin = await Item.findById(finGood._id);
-    expect(updatedRaw.currentStock).toBe(70);  // 100 - 30
-    expect(updatedFin.currentStock).toBe(10);  // 0 + 10
+    expect(updatedRaw.currentStock).toBe(70); // 100 - 30
+    expect(updatedFin.currentStock).toBe(10); // 0 + 10
 
     // Verify audit log was written — 1 deduction + 1 addition
     const transactions = await Transaction.find({ orderId: order._id });
     expect(transactions.length).toBe(2);
     const deduction = transactions.find((t) => t.type === "deduction");
-    const addition  = transactions.find((t) => t.type === "addition");
+    const addition = transactions.find((t) => t.type === "addition");
     expect(deduction.quantityChanged).toBe(30);
     expect(addition.quantityChanged).toBe(10);
   });
@@ -230,7 +285,7 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     const rawAfter = await Item.findById(rawMat._id);
     const finAfter = await Item.findById(finGood._id);
     expect(rawAfter.currentStock).toBe(20); // unchanged
-    expect(finAfter.currentStock).toBe(0);  // unchanged — outputs were NOT applied
+    expect(finAfter.currentStock).toBe(0); // unchanged — outputs were NOT applied
 
     // NO audit log records should exist — transaction was fully rolled back
     const transactions = await Transaction.find({ orderId: order._id });
@@ -241,9 +296,22 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     const manager = await createUser({ role: "manager" });
     const token = generateToken(manager._id, "manager");
 
-    const rawMat1 = await createItem({ sku: "RM-M1", type: "raw_material", currentStock: 100 });
-    const rawMat2 = await createItem({ sku: "RM-M2", type: "raw_material", currentStock: 5 }); // too low
-    const finGood  = await createItem({ sku: "FG-M1", type: "finished_good", currentStock: 0, minStockLevel: 0 });
+    const rawMat1 = await createItem({
+      sku: "RM-M1",
+      type: "raw_material",
+      currentStock: 100,
+    });
+    const rawMat2 = await createItem({
+      sku: "RM-M2",
+      type: "raw_material",
+      currentStock: 5,
+    }); // too low
+    const finGood = await createItem({
+      sku: "FG-M1",
+      type: "finished_good",
+      currentStock: 0,
+      minStockLevel: 0,
+    });
 
     const order = await createOrder(manager._id, rawMat1._id, finGood._id, {
       orderNumber: "PO-MULTI-001",
@@ -265,7 +333,7 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     const rm1After = await Item.findById(rawMat1._id);
     const rm2After = await Item.findById(rawMat2._id);
     expect(rm1After.currentStock).toBe(100); // rolled back
-    expect(rm2After.currentStock).toBe(5);   // unchanged
+    expect(rm2After.currentStock).toBe(5); // unchanged
 
     // Zero audit logs
     const transactions = await Transaction.find({ orderId: order._id });
@@ -276,8 +344,17 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     const manager = await createUser({ role: "manager" });
     const token = generateToken(manager._id, "manager");
 
-    const rawMat = await createItem({ sku: "RM-DONE", type: "raw_material", currentStock: 100 });
-    const finGood = await createItem({ sku: "FG-DONE", type: "finished_good", currentStock: 0, minStockLevel: 0 });
+    const rawMat = await createItem({
+      sku: "RM-DONE",
+      type: "raw_material",
+      currentStock: 100,
+    });
+    const finGood = await createItem({
+      sku: "FG-DONE",
+      type: "finished_good",
+      currentStock: 0,
+      minStockLevel: 0,
+    });
 
     const order = await createOrder(manager._id, rawMat._id, finGood._id, {
       orderNumber: "PO-DONE",
@@ -304,5 +381,24 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
       .send({ status: "Completed" });
 
     expect(res.status).toBe(404);
+  });
+
+  // ── NEW: Staff cannot update order status ──
+  it("returns 403 if staff tries to update an order status", async () => {
+    const staff = await createUser({ role: "staff" });
+    const token = generateToken(staff._id, "staff");
+
+    const order = await createOrder(
+      staff._id,
+      new mongoose.Types.ObjectId(),
+      new mongoose.Types.ObjectId(),
+    );
+
+    const res = await request(app)
+      .patch(`/api/orders/${order._id}/status`)
+      .set(authHeader(token))
+      .send({ status: "Completed" });
+
+    expect(res.status).toBe(403);
   });
 });

@@ -1,8 +1,13 @@
 // __tests__/users.test.js
 const request = require("supertest");
 const {
-  connectTestDB, disconnectTestDB, clearCollections,
-  getApp, generateToken, authHeader, createUser,
+  connectTestDB,
+  disconnectTestDB,
+  clearCollections,
+  getApp,
+  generateToken,
+  authHeader,
+  createUser,
 } = require("./helpers/setup");
 
 let app;
@@ -114,6 +119,50 @@ describe("GET /api/users/:id", () => {
       .set(authHeader(token));
 
     expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/users ───────────────────────────────────────────────
+
+describe("POST /api/users", () => {
+  it("allows admin to create a new user", async () => {
+    const admin = await createUser({ role: "admin" });
+    const token = generateToken(admin._id, "admin");
+
+    const newUser = {
+      name: "New Worker",
+      email: "worker@factoryflow.com",
+      password: "password123",
+      role: "staff",
+    };
+
+    const res = await request(app)
+      .post("/api/users")
+      .set(authHeader(token))
+      .send(newUser);
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.email).toBe("worker@factoryflow.com");
+    expect(res.body.data.password).toBeUndefined();
+  });
+
+  it("returns 403 if manager tries to create a user", async () => {
+    const manager = await createUser({ role: "manager" });
+    const token = generateToken(manager._id, "manager");
+
+    const res = await request(app)
+      .post("/api/users")
+      .set(authHeader(token))
+      .send({
+        name: "Hacker",
+        email: "hack@me.com",
+        password: "pwd",
+        role: "admin",
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not authorized/i);
   });
 });
 

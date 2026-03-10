@@ -1,8 +1,14 @@
 // __tests__/inventory.test.js
 const request = require("supertest");
 const {
-  connectTestDB, disconnectTestDB, clearCollections,
-  getApp, generateToken, authHeader, createUser, createItem,
+  connectTestDB,
+  disconnectTestDB,
+  clearCollections,
+  getApp,
+  generateToken,
+  authHeader,
+  createUser,
+  createItem,
 } = require("./helpers/setup");
 
 let app;
@@ -96,7 +102,13 @@ describe("POST /api/inventory", () => {
     const res = await request(app)
       .post("/api/inventory")
       .set(authHeader(token))
-      .send({ sku: "SKU-001", name: "Item", type: "raw_material", minStockLevel: 10, unit: "kg" });
+      .send({
+        sku: "SKU-001",
+        name: "Item",
+        type: "raw_material",
+        minStockLevel: 10,
+        unit: "kg",
+      });
 
     expect(res.status).toBe(403);
   });
@@ -108,7 +120,13 @@ describe("POST /api/inventory", () => {
     const res = await request(app)
       .post("/api/inventory")
       .set(authHeader(token))
-      .send({ sku: "RAW-STL-01", name: "Steel Rods", type: "raw_material", minStockLevel: 50, unit: "kg" });
+      .send({
+        sku: "RAW-STL-01",
+        name: "Steel Rods",
+        type: "raw_material",
+        minStockLevel: 50,
+        unit: "kg",
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.data.sku).toBe("RAW-STL-01");
@@ -119,7 +137,6 @@ describe("POST /api/inventory", () => {
     const admin = await createUser({ role: "admin" });
     const token = generateToken(admin._id, "admin");
 
-    // Missing sku, name, minStockLevel, unit
     const res = await request(app)
       .post("/api/inventory")
       .set(authHeader(token))
@@ -134,9 +151,21 @@ describe("POST /api/inventory", () => {
     const admin = await createUser({ role: "admin" });
     const token = generateToken(admin._id, "admin");
 
-    const payload = { sku: "DUP-001", name: "Item", type: "raw_material", minStockLevel: 10, unit: "kg" };
-    await request(app).post("/api/inventory").set(authHeader(token)).send(payload);
-    const res = await request(app).post("/api/inventory").set(authHeader(token)).send(payload);
+    const payload = {
+      sku: "DUP-001",
+      name: "Item",
+      type: "raw_material",
+      minStockLevel: 10,
+      unit: "kg",
+    };
+    await request(app)
+      .post("/api/inventory")
+      .set(authHeader(token))
+      .send(payload);
+    const res = await request(app)
+      .post("/api/inventory")
+      .set(authHeader(token))
+      .send(payload);
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/duplicate/i);
@@ -150,9 +179,9 @@ describe("GET /api/inventory/low-stock", () => {
     const staff = await createUser({ role: "staff" });
     const token = generateToken(staff._id, "staff");
 
-    await createItem({ sku: "LOW-001", currentStock: 5,  minStockLevel: 50 }); // low
-    await createItem({ sku: "LOW-002", currentStock: 5,  minStockLevel: 3  }); // ok
-    await createItem({ sku: "LOW-003", currentStock: 0,  minStockLevel: 10 }); // low
+    await createItem({ sku: "LOW-001", currentStock: 5, minStockLevel: 50 }); // low
+    await createItem({ sku: "LOW-002", currentStock: 5, minStockLevel: 3 }); // ok
+    await createItem({ sku: "LOW-003", currentStock: 0, minStockLevel: 10 }); // low
 
     const res = await request(app)
       .get("/api/inventory/low-stock")
@@ -160,7 +189,6 @@ describe("GET /api/inventory/low-stock", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(2);
-    // Sorted worst first — currentStock 0 before 5
     expect(res.body.data[0].currentStock).toBe(0);
   });
 
@@ -169,7 +197,7 @@ describe("GET /api/inventory/low-stock", () => {
     const token = generateToken(staff._id, "staff");
 
     await createItem({ sku: "OK-001", currentStock: 100, minStockLevel: 10 });
-    await createItem({ sku: "OK-002", currentStock: 50,  minStockLevel: 50 }); // exactly at min — not low
+    await createItem({ sku: "OK-002", currentStock: 50, minStockLevel: 50 });
 
     const res = await request(app)
       .get("/api/inventory/low-stock")
@@ -177,5 +205,48 @@ describe("GET /api/inventory/low-stock", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(0);
+  });
+});
+
+// ── PUT & DELETE /api/inventory/:id (Manager/Admin Only) ──────────
+
+describe("RBAC: Inventory Modifications", () => {
+  it("allows manager to update an item", async () => {
+    const manager = await createUser({ role: "manager" });
+    const token = generateToken(manager._id, "manager");
+    const item = await createItem({ name: "Old Name", currentStock: 10 });
+
+    const res = await request(app)
+      .put(`/api/inventory/${item._id}`)
+      .set(authHeader(token))
+      .send({ name: "Updated Name", currentStock: 50 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.name).toBe("Updated Name");
+    expect(res.body.data.currentStock).toBe(50);
+  });
+
+  it("returns 403 if staff tries to delete an item", async () => {
+    const staff = await createUser({ role: "staff" });
+    const token = generateToken(staff._id, "staff");
+    const item = await createItem({ name: "Do Not Delete" });
+
+    const res = await request(app)
+      .delete(`/api/inventory/${item._id}`)
+      .set(authHeader(token));
+
+    expect(res.status).toBe(403);
+  });
+
+  it("allows admin to delete an item", async () => {
+    const admin = await createUser({ role: "admin" });
+    const token = generateToken(admin._id, "admin");
+    const item = await createItem({ name: "Delete Me" });
+
+    const res = await request(app)
+      .delete(`/api/inventory/${item._id}`)
+      .set(authHeader(token));
+
+    expect(res.status).toBe(200);
   });
 });
