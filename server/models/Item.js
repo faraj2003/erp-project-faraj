@@ -9,34 +9,46 @@ const itemSchema = new mongoose.Schema(
       unique: true,
       index: true,
       uppercase: true,
-    }, // [cite: 166]
+    },
     name: {
       type: String,
       required: true,
-    }, // [cite: 166]
+    },
     type: {
       type: String,
       enum: ["raw_material", "finished_good"],
       required: true,
-    }, // [cite: 167]
+    },
     currentStock: {
       type: Number,
       default: 0,
       min: 0,
-    }, // [cite: 168]
+    },
     minStockLevel: {
       type: Number,
       required: true,
       min: 0,
-    }, // [cite: 169]
+    },
     unit: {
       type: String,
       required: true,
       lowercase: true,
-    }, // [cite: 170]
+    },
+    // ── NEW: Financial Baselines ──
+    costPerUnit: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    valuePerUnit: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // ──────────────────────────────
   },
   {
-    timestamps: true, // [cite: 171]
+    timestamps: true,
   },
 );
 
