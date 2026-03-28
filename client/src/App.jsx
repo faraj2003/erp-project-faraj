@@ -7,6 +7,7 @@ import Inventory from './pages/Inventory';
 import Orders from './pages/Orders';
 import NewOrder from './pages/NewOrder';
 import Users from './pages/Users';
+import Locations from './pages/Locations'; // <-- NEW IMPORT
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
 
@@ -42,6 +43,7 @@ function App() {
           <Route element={<ProtectedRoute roles={['manager', 'admin']} />}>
             <Route element={<AppShell />}>
               <Route path="/orders/new" element={<NewOrder />} />
+              <Route path="/locations" element={<Locations />} /> {/* <-- NEW ROUTE */}
             </Route>
           </Route>
 
@@ -61,4 +63,3 @@ function App() {
 }
 
 export default App;
-

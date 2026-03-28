@@ -19,11 +19,7 @@ const itemSchema = new mongoose.Schema(
       enum: ["raw_material", "finished_good"],
       required: true,
     },
-    currentStock: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
+    // NOTE: currentStock has been removed! It is now calculated via StockBalance.
     minStockLevel: {
       type: Number,
       required: true,
@@ -34,7 +30,6 @@ const itemSchema = new mongoose.Schema(
       required: true,
       lowercase: true,
     },
-    // ── NEW: Financial Baselines ──
     costPerUnit: {
       type: Number,
       default: 0,
@@ -45,7 +40,6 @@ const itemSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    // ──────────────────────────────
   },
   {
     timestamps: true,

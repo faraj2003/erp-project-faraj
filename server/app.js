@@ -39,7 +39,9 @@ const createApp = () => {
   app.use("/api/", apiLimiter);
 
   app.get("/health", (req, res) =>
-    res.status(200).json({ success: true, message: "FactoryFlow API is running." })
+    res
+      .status(200)
+      .json({ success: true, message: "FactoryFlow API is running." }),
   );
 
   app.use("/api/auth", require("./routes/authRoutes")(loginLimiter));
@@ -47,6 +49,7 @@ const createApp = () => {
   app.use("/api/inventory", require("./routes/inventoryRoutes"));
   app.use("/api/orders", require("./routes/orderRoutes"));
   app.use("/api/analytics", require("./routes/analyticsRoutes"));
+  app.use("/api/locations", require("./routes/locationRoutes"));
 
   app.use(errorHandler);
 

@@ -1,473 +1,194 @@
-// src/pages/Inventory.jsx
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import api from '../lib/axios';
+import axios from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
 
-// ── Zod schema ──
-const createItemSchema = z.object({
-  sku: z.string().min(1, 'SKU is required').toUpperCase(),
-  name: z.string().min(1, 'Name is required'),
-  type: z.enum(['raw_material', 'finished_good'], { errorMap: () => ({ message: 'Select a type' }) }),
-  currentStock: z.coerce.number().min(0, 'Cannot be negative').optional(),
-  minStockLevel: z.coerce.number().min(0, 'Cannot be negative'),
-  unit: z.string().min(1, 'Unit is required'),
-});
-
-// ── API fetchers ──
-const fetchItems = async ({ search, type }) => {
-  const params = new URLSearchParams();
-  if (search) params.append('search', search);
-  if (type) params.append('type', type);
-  const { data } = await api.get(`/api/inventory?${params}`);
-  return data.data;
-};
-
-const fetchLowStock = async () => {
-  const { data } = await api.get('/api/inventory/low-stock');
-  return data.data;
-};
-
-const createItemAPI = async (body) => {
-  const { data } = await api.post('/api/inventory', body);
-  return data.data;
-};
-
-// ── NEW API CALLS ──
-const updateItemAPI = async ({ id, ...body }) => {
-  const { data } = await api.put(`/api/inventory/${id}`, body);
-  return data.data;
-};
-
-const deleteItemAPI = async (id) => {
-  await api.delete(`/api/inventory/${id}`);
-};
-
-// ── Subcomponents ──
-const Badge = ({ type }) =>
-  type === 'raw_material' ? (
-    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 transition-colors">
-      Raw Material
-    </span>
-  ) : (
-    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 transition-colors">
-      Finished Good
-    </span>
-  );
-
-const StockCell = ({ current, min }) => {
-  const isLow = current < min;
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`font-semibold transition-colors ${isLow ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-200'}`}>
-        {current.toLocaleString()}
-      </span>
-      {isLow && (
-        <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full font-medium transition-colors">
-          ⚠ Low
-        </span>
-      )}
-    </div>
-  );
-};
-
-// ── Add Item Modal ──
-const AddItemModal = ({ onClose }) => {
+export default function Inventory() {
   const queryClient = useQueryClient();
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm({ resolver: zodResolver(createItemSchema) });
+  const userRole = useAuthStore((state) => state.getRole());
+  const canReceive = ['admin', 'manager', 'procurement_manager'].includes(userRole);
+  const canTransfer = ['admin', 'manager', 'dispatch_manager'].includes(userRole);
+  
+  const [selectedItemForStock, setSelectedItemForStock] = useState(null);
+  const [selectedItemForTransfer, setSelectedItemForTransfer] = useState(null);
+  
+  const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '' });
+  const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
 
-  const mutation = useMutation({
-    mutationFn: createItemAPI,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      onClose();
+  // Fetch Items 
+  const { data: items, isLoading: itemsLoading } = useQuery({
+    queryKey: ['inventory'],
+    queryFn: async () => {
+      const { data } = await axios.get('/api/inventory');
+      return data;
     },
   });
 
-  const onSubmit = (data) => mutation.mutate(data);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 px-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 border border-transparent dark:border-gray-700 transition-colors">
-        <div className="flex justify-between items-center mb-5">
-          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">Add Inventory Item</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors">✕</button>
-        </div>
-
-        {mutation.isError && (
-          <div className="mb-4 text-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg transition-colors">
-            {mutation.error?.response?.data?.error || 'Failed to create item'}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">SKU *</label>
-              <input {...register('sku')} placeholder="RAW-STL-01" className="input" />
-              {errors.sku && <p className="err">{errors.sku.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Name *</label>
-              <input {...register('name')} placeholder="Steel Rods" className="input" />
-              {errors.name && <p className="err">{errors.name.message}</p>}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Type *</label>
-            <select {...register('type')} className="input">
-              <option value="">Select type...</option>
-              <option value="raw_material">Raw Material</option>
-              <option value="finished_good">Finished Good</option>
-            </select>
-            {errors.type && <p className="err">{errors.type.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Current Stock</label>
-              <input type="number" {...register('currentStock')} defaultValue={0} className="input" />
-              {errors.currentStock && <p className="err">{errors.currentStock.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Min Level *</label>
-              <input type="number" {...register('minStockLevel')} placeholder="50" className="input" />
-              {errors.minStockLevel && <p className="err">{errors.minStockLevel.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Unit *</label>
-              <input {...register('unit')} placeholder="kg" className="input" />
-              {errors.unit && <p className="err">{errors.unit.message}</p>}
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary">Cancel</button>
-            <button type="submit" disabled={isSubmitting || mutation.isPending} className="flex-1 btn-primary">
-              {mutation.isPending ? 'Adding...' : 'Add Item'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// ── NEW: Edit Item Modal ──
-const EditItemModal = ({ item, onClose }) => {
-  const queryClient = useQueryClient();
-  
-  // Pre-fill the form with the existing item's data
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm({ 
-    resolver: zodResolver(createItemSchema),
-    defaultValues: {
-      sku: item.sku,
-      name: item.name,
-      type: item.type,
-      currentStock: item.currentStock,
-      minStockLevel: item.minStockLevel,
-      unit: item.unit,
-    }
-  });
-
-  const mutation = useMutation({
-    mutationFn: updateItemAPI,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      onClose();
+  // Fetch Locations
+  const { data: locations } = useQuery({
+    queryKey: ['locations'],
+    queryFn: async () => {
+      const { data } = await axios.get('/api/locations');
+      return data;
     },
   });
 
-  const onSubmit = (data) => mutation.mutate({ id: item._id, ...data });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 px-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 border border-transparent dark:border-gray-700 transition-colors">
-        <div className="flex justify-between items-center mb-5">
-          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">Edit Inventory Item</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors">✕</button>
-        </div>
-
-        {mutation.isError && (
-          <div className="mb-4 text-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg transition-colors">
-            {mutation.error?.response?.data?.error || 'Failed to update item'}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">SKU *</label>
-              <input {...register('sku')} className="input" />
-              {errors.sku && <p className="err">{errors.sku.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Name *</label>
-              <input {...register('name')} className="input" />
-              {errors.name && <p className="err">{errors.name.message}</p>}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Type *</label>
-            <select {...register('type')} className="input">
-              <option value="raw_material">Raw Material</option>
-              <option value="finished_good">Finished Good</option>
-            </select>
-            {errors.type && <p className="err">{errors.type.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Current Stock</label>
-              <input type="number" {...register('currentStock')} className="input" />
-              {errors.currentStock && <p className="err">{errors.currentStock.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Min Level *</label>
-              <input type="number" {...register('minStockLevel')} className="input" />
-              {errors.minStockLevel && <p className="err">{errors.minStockLevel.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Unit *</label>
-              <input {...register('unit')} className="input" />
-              {errors.unit && <p className="err">{errors.unit.message}</p>}
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary">Cancel</button>
-            <button type="submit" disabled={isSubmitting || mutation.isPending} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold transition-colors">
-              {mutation.isPending ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// ── Main Page ──
-const Inventory = () => {
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  
-  // ── NEW: State to hold the item currently being edited ──
-  const [itemToEdit, setItemToEdit] = useState(null);
-  
-  const [showLowStock, setShowLowStock] = useState(false);
-  const { isManager } = useAuthStore();
-
-  const { data: items = [], isLoading, isError } = useQuery({
-    queryKey: ['inventory', { search, type: typeFilter }],
-    queryFn: () => fetchItems({ search, type: typeFilter }),
+  // Add Stock Mutation
+  const addStockMutation = useMutation({
+    mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/stock`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setSelectedItemForStock(null);
+      setAddStockForm({ locationId: '', quantityToAdd: '' });
+    },
   });
 
-  const { data: lowStockItems = [] } = useQuery({
-    queryKey: ['inventory', 'low-stock'],
-    queryFn: fetchLowStock,
-  });
-
-  // ── NEW: Delete Mutation ──
-  const deleteMutation = useMutation({
-    mutationFn: deleteItemAPI,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory'] }),
-    onError: (err) => alert(err?.response?.data?.error || 'Failed to delete item'),
-  });
-
-  const handleDelete = (id, name) => {
-    if (window.confirm(`Are you sure you want to delete ${name}? This cannot be undone.`)) {
-      deleteMutation.mutate(id);
+  // Transfer Stock Mutation
+  const transferStockMutation = useMutation({
+    mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/transfer`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setSelectedItemForTransfer(null);
+      setTransferForm({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
+    },
+    onError: (error) => {
+      alert(error.response?.data?.message || "Transfer failed");
     }
+  });
+
+  const handleAddStockSubmit = (e) => {
+    e.preventDefault();
+    if (!addStockForm.locationId || !addStockForm.quantityToAdd) return;
+    addStockMutation.mutate({ id: selectedItemForStock._id, payload: { locationId: addStockForm.locationId, quantityToAdd: Number(addStockForm.quantityToAdd) } });
   };
 
-  const handleExportCSV = () => {
-    if (!items || items.length === 0) return;
-
-    const headers = ['SKU', 'Item Name', 'Type', 'Current Stock', 'Min Level', 'Unit'];
-    const csvRows = [headers.join(',')];
-
-    items.forEach(item => {
-      const safeName = item.name.replace(/"/g, '""'); 
-      const row = [
-        item.sku,
-        `"${safeName}"`,
-        item.type,
-        item.currentStock,
-        item.minStockLevel,
-        item.unit
-      ];
-      csvRows.push(row.join(','));
-    });
-
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factoryflow-inventory-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+  const handleTransferSubmit = (e) => {
+    e.preventDefault();
+    if (!transferForm.sourceLocationId || !transferForm.destinationLocationId || !transferForm.quantity) return;
+    transferStockMutation.mutate({ id: selectedItemForTransfer._id, payload: { ...transferForm, quantity: Number(transferForm.quantity) } });
   };
+
+  if (itemsLoading) return <div className="p-4 text-gray-600">Loading Inventory...</div>;
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-extrabold text-gray-800 dark:text-white transition-colors">Inventory</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 transition-colors">
-            {items.length} item{items.length !== 1 ? 's' : ''} in catalog
-            {lowStockItems.length > 0 && (
-              <button
-                onClick={() => setShowLowStock(!showLowStock)}
-                className="ml-3 text-red-600 dark:text-red-400 font-semibold hover:underline transition-colors"
-              >
-                ⚠ {lowStockItems.length} low-stock alert{lowStockItems.length !== 1 ? 's' : ''}
-              </button>
-            )}
-          </p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          {items.length > 0 && (
-            <button 
-              onClick={handleExportCSV}
-              className="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold py-2 px-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm transition-colors text-sm flex items-center gap-2 cursor-pointer"
-            >
-              <span className="text-lg leading-none">⬇</span> Export CSV
-            </button>
-          )}
+    <div className="p-6 max-w-7xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">Global Inventory Overview</h1>
 
-          {isManager() && (
-            <button onClick={() => setShowAddModal(true)} className="btn-primary">
-              + Add Item
-            </button>
-          )}
-        </div>
+      <div className="grid grid-cols-1 gap-6">
+        {items?.map((item) => (
+          <div key={item._id} className="bg-white p-6 rounded shadow border border-gray-200">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">{item.name} <span className="text-sm font-normal text-gray-500">({item.sku})</span></h2>
+                <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mt-1 capitalize">
+                  {item.type.replace('_', ' ')}
+                </span>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-500 uppercase tracking-wide">Total Global Stock</p>
+                <p className={`text-2xl font-bold ${item.currentStock <= item.minStockLevel ? 'text-red-600' : 'text-green-600'}`}>
+                  {item.currentStock} {item.unit}
+                </p>
+              </div>
+            </div>
+
+            {/* Location Breakdown */}
+            <div className="mt-4 bg-gray-50 p-4 rounded border border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location:</h3>
+              {item.balances?.length > 0 ? (
+                <ul className="space-y-2">
+                  {item.balances.map((balance) => (
+                    <li key={balance._id} className="flex justify-between text-sm bg-white p-2 rounded border border-gray-200 shadow-sm">
+                      <span className="text-gray-700 font-medium">{balance.locationId?.name || 'Unknown'} <span className="text-xs text-gray-400 font-normal">({balance.locationId?.type})</span></span>
+                      <span className="font-bold text-gray-800">{balance.quantity} {item.unit}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500 italic">No stock found in any location.</p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="mt-4 flex gap-3">
+              {canReceive && (
+                <button onClick={() => setSelectedItemForStock(item)} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
+                  + Receive Stock
+                </button>
+              )}
+              {canTransfer && item.balances?.length > 0 && (
+                <button onClick={() => setSelectedItemForTransfer(item)} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-blue-200">
+                  ⇄ Transfer Stock
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Low-stock alert banner */}
-      {showLowStock && lowStockItems.length > 0 && (
-        <div className="mb-5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl p-4 transition-colors">
-          <p className="text-sm font-bold text-red-700 dark:text-red-400 mb-2">⚠ Items Below Minimum Stock Level</p>
-          <div className="flex flex-wrap gap-2">
-            {lowStockItems.map((item) => (
-              <span key={item._id} className="text-xs bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-1 rounded-full font-medium border border-transparent dark:border-red-800/50 transition-colors">
-                {item.name} — {item.currentStock} / {item.minStockLevel} {item.unit}
-              </span>
-            ))}
+      {/* --- ADD STOCK MODAL --- */}
+      {selectedItemForStock && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
+            <h2 className="text-xl font-bold mb-4">Receive Stock: {selectedItemForStock.name}</h2>
+            <form onSubmit={handleAddStockSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Destination Location</label>
+                <select className="w-full border border-gray-300 rounded p-2" value={addStockForm.locationId} onChange={(e) => setAddStockForm({ ...addStockForm, locationId: e.target.value })} required>
+                  <option value="">-- Select a Location --</option>
+                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name} ({loc.type})</option>)}
+                </select>
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-1">Quantity ({selectedItemForStock.unit})</label>
+                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addStockForm.quantityToAdd} onChange={(e) => setAddStockForm({ ...addStockForm, quantityToAdd: e.target.value })} required />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setSelectedItemForStock(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="submit" disabled={addStockMutation.isLoading} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-900">{addStockMutation.isLoading ? 'Processing...' : 'Confirm Receipt'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-4">
-        <input
-          type="text"
-          placeholder="Search by name..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input max-w-xs"
-        />
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="input max-w-[180px]"
-        >
-          <option value="">All Types</option>
-          <option value="raw_material">Raw Material</option>
-          <option value="finished_good">Finished Good</option>
-        </select>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden transition-colors">
-        {isLoading ? (
-          <div className="p-12 text-center text-gray-400 dark:text-gray-500 text-sm animate-pulse">Loading inventory...</div>
-        ) : isError ? (
-          <div className="p-8 text-center text-red-500 dark:text-red-400 text-sm">Failed to load inventory.</div>
-        ) : items.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-3xl mb-2">📦</p>
-            <p className="text-gray-500 dark:text-gray-400 font-medium">No items found.</p>
+      {/* --- TRANSFER STOCK MODAL --- */}
+      {selectedItemForTransfer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-blue-600">
+            <h2 className="text-xl font-bold mb-4">Transfer Stock: {selectedItemForTransfer.name}</h2>
+            <form onSubmit={handleTransferSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">From (Source)</label>
+                <select className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
+                  <option value="">-- Select Source --</option>
+                  {/* Only show locations where this item actually has stock */}
+                  {selectedItemForTransfer.balances.map(b => (
+                    <option key={b.locationId._id} value={b.locationId._id}>
+                      {b.locationId.name} (Avail: {b.quantity})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">To (Destination)</label>
+                <select className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.destinationLocationId} onChange={(e) => setTransferForm({ ...transferForm, destinationLocationId: e.target.value })} required>
+                  <option value="">-- Select Destination --</option>
+                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name} ({loc.type})</option>)}
+                </select>
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity to Transfer ({selectedItemForTransfer.unit})</label>
+                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setSelectedItemForTransfer(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium">Cancel</button>
+                <button type="submit" disabled={transferStockMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium">{transferStockMutation.isLoading ? 'Processing...' : 'Confirm Transfer'}</button>
+              </div>
+            </form>
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 text-left transition-colors">
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">SKU</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stock</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Min Level</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unit</th>
-                {/* ── NEW: Actions column for managers ── */}
-                {isManager() && (
-                  <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {items.map((item) => {
-                const isLow = item.currentStock < item.minStockLevel;
-                return (
-                  <tr
-                    key={item._id}
-                    className={`transition-colors duration-150 ${isLow ? 'bg-red-50/40 dark:bg-red-900/10 hover:bg-red-50/60 dark:hover:bg-red-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'}`}
-                  >
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400 font-semibold">{item.sku}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">{item.name}</td>
-                    <td className="px-4 py-3"><Badge type={item.type} /></td>
-                    <td className="px-4 py-3"><StockCell current={item.currentStock} min={item.minStockLevel} /></td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.minStockLevel.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-500">{item.unit}</td>
-                    
-                    {/* ── NEW: Edit/Delete buttons ── */}
-                    {isManager() && (
-                      <td className="px-4 py-3 text-right space-x-3">
-                        <button 
-                          onClick={() => setItemToEdit(item)}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-xs transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(item._id, item.name)}
-                          disabled={deleteMutation.isPending}
-                          className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium text-xs transition-colors disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {showAddModal && <AddItemModal onClose={() => setShowAddModal(false)} />}
-      
-      {/* ── NEW: Render the Edit Modal ── */}
-      {itemToEdit && <EditItemModal item={itemToEdit} onClose={() => setItemToEdit(null)} />}
+        </div>
+      )}
     </div>
   );
-};
-
-export default Inventory;
+}

@@ -1,220 +1,158 @@
-// src/pages/Users.jsx
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import api from '../lib/axios';
-import { useAuthStore } from '../store/authStore';
+import axios from '../lib/axios';
 
-// ── Zod Schema for New User ──
-const createUserSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['staff', 'manager', 'admin'], { errorMap: () => ({ message: 'Select a valid role' }) }),
-});
-
-// ── API Fetchers ──
-const fetchUsers = async () => {
-  const { data } = await api.get('/api/users');
-  return data.data; // Assumes your API returns { success: true, data: [...] }
-};
-
-const createUserAPI = async (body) => {
-  const { data } = await api.post('/api/users', body);
-  return data.data;
-};
-
-const updateUserRoleAPI = async ({ id, role }) => {
-  const { data } = await api.patch(`/api/users/${id}/role`, { role });
-  return data.data;
-};
-
-// ── Subcomponents ──
-const RoleBadge = ({ role }) => {
-  const styles = {
-    admin: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    manager: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    staff: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  };
-  return (
-    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider transition-colors ${styles[role] || styles.staff}`}>
-      {role}
-    </span>
-  );
-};
-
-// ── Add User Modal ──
-const AddUserModal = ({ onClose }) => {
+export default function Users() {
   const queryClient = useQueryClient();
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm({ 
-    resolver: zodResolver(createUserSchema),
-    defaultValues: { role: 'staff' }
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'staff',
+    locationId: '', 
   });
 
-  const mutation = useMutation({
-    mutationFn: createUserAPI,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      onClose();
+  // Fetch all Users
+  const { data: users, isLoading: usersLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const { data } = await axios.get('/api/users');
+      return data;
     },
   });
 
-  const onSubmit = (data) => mutation.mutate(data);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 px-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 border border-transparent dark:border-gray-700 transition-colors">
-        <div className="flex justify-between items-center mb-5">
-          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">Add New User</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors">✕</button>
-        </div>
-
-        {mutation.isError && (
-          <div className="mb-4 text-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg transition-colors">
-            {mutation.error?.response?.data?.error || 'Failed to create user. Email might be taken.'}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Full Name *</label>
-            <input {...register('name')} placeholder="Jane Doe" className="input" />
-            {errors.name && <p className="err">{errors.name.message}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Email Address *</label>
-            <input type="email" {...register('email')} placeholder="jane@factoryflow.com" className="input" />
-            {errors.email && <p className="err">{errors.email.message}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Temporary Password *</label>
-            <input type="password" {...register('password')} placeholder="••••••••" className="input" />
-            {errors.password && <p className="err">{errors.password.message}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">System Role *</label>
-            <select {...register('role')} className="input">
-              <option value="staff">Staff (Limited Access)</option>
-              <option value="manager">Manager (Operations Access)</option>
-              <option value="admin">Admin (Full Access)</option>
-            </select>
-            {errors.role && <p className="err">{errors.role.message}</p>}
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <button type="button" onClick={onClose} className="flex-1 btn-secondary">Cancel</button>
-            <button type="submit" disabled={isSubmitting || mutation.isPending} className="flex-1 btn-primary">
-              {mutation.isPending ? 'Creating...' : 'Create User'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// ── Main Page ──
-const Users = () => {
-  const [showModal, setShowModal] = useState(false);
-  const queryClient = useQueryClient();
-  const { user: currentUser } = useAuthStore(); // So we can prevent the admin from demoting themselves
-
-  const { data: users = [], isLoading, isError } = useQuery({
-    queryKey: ['users'],
-    queryFn: fetchUsers,
+  // Fetch all Locations for the dropdown
+  const { data: locations, isLoading: locationsLoading } = useQuery({
+    queryKey: ['locations'],
+    queryFn: async () => {
+      const { data } = await axios.get('/api/locations');
+      return data;
+    },
   });
 
-  const roleMutation = useMutation({
-    mutationFn: updateUserRoleAPI,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
-    onError: (err) => alert(err?.response?.data?.error || 'Failed to update role'),
-  });
-
-  const handleRoleChange = (userId, newRole) => {
-    if (window.confirm(`Are you sure you want to change this user's role to ${newRole}?`)) {
-      roleMutation.mutate({ id: userId, role: newRole });
+  // Create User Mutation
+  const createUser = useMutation({
+    mutationFn: async (newUser) => {
+      const { data } = await axios.post('/api/users', newUser);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      // Reset form on success
+      setFormData({ name: '', email: '', password: '', role: 'staff', locationId: '' });
+    },
+    onError: (error) => {
+      alert(error.response?.data?.message || "Failed to create user");
     }
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const payload = { ...formData };
+    
+    // If the user left it as "-- No Location --", remove it so Mongoose sets it to null
+    if (!payload.locationId) {
+      delete payload.locationId; 
+    }
+    
+    createUser.mutate(payload);
   };
 
+  const handleChange = (e) => {
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  if (usersLoading || locationsLoading) return <div className="p-4 text-gray-600">Loading data...</div>;
+
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 max-w-6xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6 text-gray-800">Manage Team Members</h1>
+
+      {/* CREATE USER FORM */}
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
         <div>
-          <h2 className="text-2xl font-extrabold text-gray-800 dark:text-white transition-colors duration-200">User Management</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 transition-colors duration-200">
-            {users.length} registered user{users.length !== 1 ? 's' : ''}
-          </p>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+          <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded focus:ring-blue-500 focus:border-blue-500" required />
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary">
-          + Add User
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+          <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded focus:ring-blue-500 focus:border-blue-500" required />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
+          <input type="password" name="password" value={formData.password} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded focus:ring-blue-500 focus:border-blue-500" required />
+        </div>
+        
+        {/* ROLE DROPDOWN */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Role</label>
+          <select name="role" value={formData.role} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded focus:ring-blue-500 focus:border-blue-500">
+            <option value="staff">General Staff</option>
+            <option value="manager">System Manager</option>
+            <option value="admin">System Admin</option>
+            <option value="shop_manager">Shop Manager</option>
+            <option value="shop_worker">Shop Worker</option>
+            <option value="procurement_manager">Procurement Manager</option>
+            <option value="dispatch_manager">Dispatch Manager</option>
+          </select>
+        </div>
+
+        {/* LOCATION DROPDOWN */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Location</label>
+          <select name="locationId" value={formData.locationId} onChange={handleChange} className="w-full border border-gray-300 p-2 rounded focus:ring-blue-500 focus:border-blue-500">
+            <option value="">-- No Location (Global / Office) --</option>
+            {locations?.map((loc) => (
+              <option key={loc._id} value={loc._id}>
+                {loc.name} ({loc.type})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button type="submit" className="bg-blue-600 text-white font-medium px-4 py-2 rounded hover:bg-blue-700 transition-colors w-full h-[42px]" disabled={createUser.isLoading}>
+          {createUser.isLoading ? 'Creating...' : 'Create Team Member'}
         </button>
-      </div>
+      </form>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden transition-colors duration-200">
-        {isLoading ? (
-          <div className="p-12 text-center text-gray-400 dark:text-gray-500 text-sm animate-pulse">Loading directory...</div>
-        ) : isError ? (
-          <div className="p-8 text-center text-red-500 dark:text-red-400 text-sm">Failed to load users.</div>
-        ) : users.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-3xl mb-2">👥</p>
-            <p className="text-gray-500 dark:text-gray-400 font-medium">No users found.</p>
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 text-left transition-colors duration-200">
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Current Role</th>
-                <th className="px-4 py-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Update Role</th>
+      {/* USERS TABLE */}
+      <div className="bg-white rounded shadow overflow-x-auto border border-gray-200">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="p-4 font-semibold text-gray-600">Name</th>
+              <th className="p-4 font-semibold text-gray-600">Email</th>
+              <th className="p-4 font-semibold text-gray-600">Role</th>
+              <th className="p-4 font-semibold text-gray-600">Location</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users?.map((user) => (
+              <tr key={user._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                <td className="p-4 text-gray-800 font-medium">{user.name}</td>
+                <td className="p-4 text-gray-600">{user.email}</td>
+                <td className="p-4">
+                  <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded capitalize font-medium">
+                    {user.role.replace('_', ' ')}
+                  </span>
+                </td>
+                <td className="p-4">
+                  {user.locationId ? (
+                    <span className="font-medium text-gray-700">{user.locationId.name}</span>
+                  ) : (
+                    <span className="text-gray-400 italic">Global</span>
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {users.map((u) => {
-                const isSelf = u._id === currentUser?._id;
-
-                return (
-                  <tr key={u._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors duration-150">
-                    <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-200">
-                      {u.name} {isSelf && <span className="ml-2 text-xs text-gray-400 font-normal">(You)</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{u.email}</td>
-                    <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={u.role}
-                        onChange={(e) => handleRoleChange(u._id, e.target.value)}
-                        disabled={isSelf || roleMutation.isPending}
-                        className="text-xs border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                      >
-                        <option value="staff">Staff</option>
-                        <option value="manager">Manager</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+            ))}
+            {users?.length === 0 && (
+              <tr>
+                <td colSpan="4" className="p-4 text-center text-gray-500">No users found.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
-
-      {showModal && <AddUserModal onClose={() => setShowModal(false)} />}
     </div>
   );
-};
-
-export default Users;
+}

@@ -1,110 +1,160 @@
 // controllers/inventoryController.js
 const Item = require("../models/Item");
-const AppError = require("../utils/AppError");
+const StockBalance = require("../models/StockBalance");
+const Transaction = require("../models/Transaction");
 
-// @desc    Create a new inventory item
+// @desc    Get all items with their multi-location balances
+// @route   GET /api/inventory
+exports.getItems = async (req, res, next) => {
+  try {
+    const items = await Item.find().lean();
+    const balances = await StockBalance.find()
+      .populate("locationId", "name type")
+      .lean();
+
+    const itemsWithBalances = items.map((item) => {
+      const itemBalances = balances.filter(
+        (b) => b.itemId.toString() === item._id.toString(),
+      );
+      const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
+
+      return {
+        ...item,
+        currentStock: totalStock,
+        balances: itemBalances,
+      };
+    });
+
+    res.status(200).json(itemsWithBalances);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Create new item (catalog only)
 // @route   POST /api/inventory
-// @access  Private (Managers & Admins only)
-const createItem = async (req, res, next) => {
+exports.createItem = async (req, res, next) => {
   try {
     const item = await Item.create(req.body);
-    res.status(201).json({ success: true, data: item });
+    res.status(201).json(item);
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get all inventory items (with search & type filters)
-// @route   GET /api/inventory
-// @access  Private (All authenticated users)
-const getItems = async (req, res, next) => {
+// @desc    Add stock to a specific location (External receipt)
+// @route   POST /api/inventory/:id/stock
+exports.addStock = async (req, res, next) => {
   try {
-    let query = {};
+    const { locationId, quantityToAdd } = req.body;
+    const itemId = req.params.id;
 
-    if (req.query.search) {
-      query.name = { $regex: req.query.search, $options: "i" };
+    if (!locationId || !quantityToAdd || quantityToAdd <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Valid Location and positive quantity required" });
     }
 
-    if (req.query.type) {
-      const validTypes = ["raw_material", "finished_good"];
-      if (!validTypes.includes(req.query.type)) {
-        return next(
-          new AppError(
-            "Invalid type filter. Use 'raw_material' or 'finished_good'",
-            400,
-          ),
-        );
-      }
-      query.type = req.query.type;
-    }
-
-    const items = await Item.find(query);
-    res.status(200).json({ success: true, count: items.length, data: items });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get items where currentStock < minStockLevel
-// @route   GET /api/inventory/low-stock
-// @access  Private (All authenticated users)
-const getLowStockItems = async (req, res, next) => {
-  try {
-    const items = await Item.find({
-      $expr: { $lt: ["$currentStock", "$minStockLevel"] },
-    }).sort({ currentStock: 1 });
-
-    res.status(200).json({
-      success: true,
-      count: items.length,
-      data: items,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ── NEW: Update an inventory item ──
-// @route   PUT /api/inventory/:id
-// @access  Private (Managers & Admins only)
-const updateItem = async (req, res, next) => {
-  try {
-    const item = await Item.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
+    let balance = await StockBalance.findOne({
+      itemId,
+      locationId,
+      zoneName: "Default",
+      rackName: "Default",
     });
 
-    if (!item) {
-      return next(new AppError("Item not found", 404));
+    if (balance) {
+      balance.quantity += Number(quantityToAdd);
+      await balance.save();
+    } else {
+      balance = await StockBalance.create({
+        itemId,
+        locationId,
+        quantity: Number(quantityToAdd),
+      });
     }
 
-    res.status(200).json({ success: true, data: item });
+    await Transaction.create({
+      itemId,
+      type: "addition",
+      destinationLocationId: locationId,
+      quantityChanged: quantityToAdd,
+      performedBy: req.user._id,
+    });
+
+    res.status(200).json({ message: "Stock added successfully", balance });
   } catch (error) {
     next(error);
   }
 };
 
-// ── NEW: Delete an inventory item ──
-// @route   DELETE /api/inventory/:id
-// @access  Private (Managers & Admins only)
-const deleteItem = async (req, res, next) => {
+// ── NEW: Transfer Stock Between Locations ──
+// @desc    Transfer stock from one location to another
+// @route   POST /api/inventory/:id/transfer
+exports.transferStock = async (req, res, next) => {
   try {
-    const item = await Item.findByIdAndDelete(req.params.id);
+    const { sourceLocationId, destinationLocationId, quantity } = req.body;
+    const itemId = req.params.id;
+    const transferQty = Number(quantity);
 
-    if (!item) {
-      return next(new AppError("Item not found", 404));
+    if (!sourceLocationId || !destinationLocationId || transferQty <= 0) {
+      return res.status(400).json({ message: "Invalid transfer parameters" });
     }
 
-    res.status(200).json({ success: true, data: {} });
+    if (sourceLocationId === destinationLocationId) {
+      return res
+        .status(400)
+        .json({ message: "Source and destination cannot be the same" });
+    }
+
+    // 1. Check Source Balance
+    const sourceBalance = await StockBalance.findOne({
+      itemId,
+      locationId: sourceLocationId,
+      zoneName: "Default",
+      rackName: "Default",
+    });
+
+    if (!sourceBalance || sourceBalance.quantity < transferQty) {
+      return res
+        .status(400)
+        .json({ message: "Insufficient stock at the source location" });
+    }
+
+    // 2. Deduct from Source
+    sourceBalance.quantity -= transferQty;
+    await sourceBalance.save();
+
+    // 3. Add to Destination
+    let destBalance = await StockBalance.findOne({
+      itemId,
+      locationId: destinationLocationId,
+      zoneName: "Default",
+      rackName: "Default",
+    });
+
+    if (destBalance) {
+      destBalance.quantity += transferQty;
+      await destBalance.save();
+    } else {
+      await StockBalance.create({
+        itemId,
+        locationId: destinationLocationId,
+        quantity: transferQty,
+      });
+    }
+
+    // 4. Create Audit Trail
+    await Transaction.create({
+      itemId,
+      type: "transfer",
+      sourceLocationId,
+      destinationLocationId,
+      quantityChanged: transferQty,
+      performedBy: req.user._id,
+    });
+
+    res.status(200).json({ message: "Stock transferred successfully" });
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  createItem,
-  getItems,
-  getLowStockItems,
-  updateItem,
-  deleteItem,
 };

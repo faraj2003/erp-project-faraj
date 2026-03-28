@@ -2,211 +2,227 @@
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Item = require("../models/Item");
+const Location = require("../models/Location");
+const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
 const AppError = require("../utils/AppError");
-const logger = require("../utils/logger");
 
-// @desc    Get all production orders (paginated, with status filter)
-// @route   GET /api/orders
-// @access  Private (All authenticated users)
-const getOrders = async (req, res, next) => {
+exports.getOrders = async (req, res, next) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
-    const skip = (page - 1) * limit;
-
-    const filter = {};
-    if (req.query.status) {
-      const validStatuses = [
-        "Pending",
-        "In Progress",
-        "Completed",
-        "Cancelled",
-      ];
-      if (!validStatuses.includes(req.query.status)) {
-        return next(
-          new AppError(
-            `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
-            400,
-          ),
-        );
-      }
-      filter.status = req.query.status;
-    }
-
-    const [total, orders] = await Promise.all([
-      Order.countDocuments(filter),
-      Order.find(filter)
-        .populate("managerId", "name email role")
-        .populate("inputs.itemId", "name sku unit")
-        .populate("outputs.itemId", "name sku unit")
-        .populate("statusHistory.changedBy", "name") // <-- Populate audit trail user names
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-    ]);
-
-    const totalPages = Math.ceil(total / limit);
+    const orders = await Order.find()
+      .populate("managerId", "name email role")
+      .populate("locationId", "name type")
+      .populate("inputs.itemId", "name sku unit")
+      .populate("outputs.itemId", "name sku unit")
+      .populate("statusHistory.changedBy", "name")
+      .sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
       data: orders,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
+      pagination: { total: orders.length, page: 1, totalPages: 1 },
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Generate a new production order
-// @route   POST /api/orders
-// @access  Private (Managers & Admins only)
-const createOrder = async (req, res, next) => {
+exports.createOrder = async (req, res, next) => {
   try {
-    const { orderNumber, notes, inputs, outputs } = req.body;
+    const { orderNumber, notes, inputs, outputs, locationId } = req.body;
+
+    if (!locationId)
+      throw new AppError("A Shop/Location must be assigned to this order", 400);
 
     let totalMaterialCost = 0;
     let totalProductionValue = 0;
 
-    // ── Snapshot Costs for Inputs ──
     const enrichedInputs = await Promise.all(
       inputs.map(async (input) => {
         const item = await Item.findById(input.itemId);
-        if (!item)
-          throw new AppError(`Item with ID ${input.itemId} not found`, 404);
-
-        const cost = item.costPerUnit || 0;
-        totalMaterialCost += cost * input.quantityRequired;
-
-        return { ...input, unitCost: cost };
+        totalMaterialCost += (item.costPerUnit || 0) * input.quantityRequired;
+        return { ...input, unitCost: item.costPerUnit || 0 };
       }),
     );
 
-    // ── Snapshot Values for Outputs ──
     const enrichedOutputs = await Promise.all(
       outputs.map(async (output) => {
         const item = await Item.findById(output.itemId);
-        if (!item)
-          throw new AppError(`Item with ID ${output.itemId} not found`, 404);
-
-        const value = item.valuePerUnit || 0;
-        totalProductionValue += value * output.quantityProduced;
-
-        return { ...output, unitValue: value };
+        totalProductionValue +=
+          (item.valuePerUnit || 0) * output.quantityProduced;
+        return { ...output, unitValue: item.valuePerUnit || 0 };
       }),
     );
 
     const order = await Order.create({
       orderNumber,
       managerId: req.user._id,
-      status: "Pending",
+      locationId,
       notes,
       inputs: enrichedInputs,
       outputs: enrichedOutputs,
       financials: { totalMaterialCost, totalProductionValue },
     });
-    // Note: The pre-save hook in Order.js automatically creates the first statusHistory entry!
 
-    logger.info(
-      `[Orders] New order created: ${order.orderNumber} by ${req.user._id}`,
-    );
     res.status(201).json({ success: true, data: order });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Update order status and trigger inventory sync if completed
-// @route   PATCH /api/orders/:id/status
-// @access  Private (Managers & Admins only)
-const completeOrder = async (req, res, next) => {
+exports.completeOrder = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { status } = req.body;
+    const { status, actuals } = req.body; // actuals = [{ itemId, utilized, scrapped }]
     const order = await Order.findById(req.params.id).session(session);
 
     if (!order) throw new AppError("Order not found", 404);
     if (order.status === "Completed")
-      throw new AppError(
-        "Order is already completed and cannot be changed",
-        400,
-      );
-    if (order.status === "Cancelled")
-      throw new AppError("Order is cancelled and cannot be changed", 400);
+      throw new AppError("Order already completed", 400);
 
-    // ── Audit Trail Update ──
     order.statusHistory.push({
-      status: status,
+      status,
       changedBy: req.user._id,
       timestamp: new Date(),
     });
 
+    // If just updating status to In Progress, etc.
     if (status !== "Completed") {
       order.status = status;
       await order.save({ session });
       await session.commitTransaction();
-
-      logger.info(
-        `[Orders] Order status updated to ${status}: ${order.orderNumber}`,
-      );
       return res.status(200).json({ success: true, data: order });
     }
 
-    // ── Inventory Math for "Completed" Status ──
-    for (const input of order.inputs) {
-      const item = await Item.findById(input.itemId).session(session);
-      if (!item)
-        throw new AppError(`Item with ID ${input.itemId} not found`, 404);
-      if (item.currentStock < input.quantityRequired) {
+    // ── INVENTORY MATH FOR COMPLETION (MULTI-LOCATION & SCRAP) ──
+
+    // Ensure we have a Scrap Location
+    let scrapLocation = await Location.findOne({ type: "Scrap" }).session(
+      session,
+    );
+    if (!scrapLocation) {
+      scrapLocation = await Location.create(
+        [{ name: "Main Scrap Yard", type: "Scrap" }],
+        { session },
+      );
+      scrapLocation = scrapLocation[0];
+    }
+
+    // 1. Process Inputs (Deduct from Shop, Move scrap to Scrap Yard)
+    for (let i = 0; i < order.inputs.length; i++) {
+      const input = order.inputs[i];
+      const actualData = actuals?.find(
+        (a) => a.itemId === input.itemId.toString(),
+      );
+
+      const utilized = actualData
+        ? Number(actualData.utilized)
+        : input.quantityRequired;
+      const scrapped = actualData ? Number(actualData.scrapped) : 0;
+      const totalConsumed = utilized + scrapped;
+
+      input.quantityUtilized = utilized;
+      input.quantityScrapped = scrapped;
+
+      // Find stock at the Shop
+      const shopBalance = await StockBalance.findOne({
+        itemId: input.itemId,
+        locationId: order.locationId,
+      }).session(session);
+
+      if (!shopBalance || shopBalance.quantity < totalConsumed) {
         throw new AppError(
-          `Insufficient stock for '${item.name}'. Required: ${input.quantityRequired}, Available: ${item.currentStock}`,
+          `Not enough stock at the shop to consume ${totalConsumed} units of item ${input.itemId}`,
           400,
         );
       }
 
-      item.currentStock -= input.quantityRequired;
-      await item.save({ session });
-
+      // Deduct total consumed from Shop
+      shopBalance.quantity -= totalConsumed;
+      await shopBalance.save({ session });
       await Transaction.create(
         [
           {
-            itemId: item._id,
+            itemId: input.itemId,
             orderId: order._id,
-            type: "deduction",
-            quantityChanged: input.quantityRequired,
-            newStockLevel: item.currentStock,
+            type: "shop_consumption",
+            sourceLocationId: order.locationId,
+            quantityChanged: totalConsumed,
             performedBy: req.user._id,
           },
         ],
         { session },
       );
+
+      // If scrapped, add to Scrap Location
+      if (scrapped > 0) {
+        let scrapBalance = await StockBalance.findOne({
+          itemId: input.itemId,
+          locationId: scrapLocation._id,
+        }).session(session);
+        if (scrapBalance) {
+          scrapBalance.quantity += scrapped;
+          await scrapBalance.save({ session });
+        } else {
+          await StockBalance.create(
+            [
+              {
+                itemId: input.itemId,
+                locationId: scrapLocation._id,
+                quantity: scrapped,
+              },
+            ],
+            { session },
+          );
+        }
+        await Transaction.create(
+          [
+            {
+              itemId: input.itemId,
+              orderId: order._id,
+              type: "scrap_return",
+              sourceLocationId: order.locationId,
+              destinationLocationId: scrapLocation._id,
+              quantityChanged: scrapped,
+              performedBy: req.user._id,
+            },
+          ],
+          { session },
+        );
+      }
     }
 
+    // 2. Process Outputs (Add finished goods to the Shop)
     for (const output of order.outputs) {
-      const item = await Item.findById(output.itemId).session(session);
-      if (!item)
-        throw new AppError(`Item with ID ${output.itemId} not found`, 404);
-
-      item.currentStock += output.quantityProduced;
-      await item.save({ session });
-
+      let destBalance = await StockBalance.findOne({
+        itemId: output.itemId,
+        locationId: order.locationId,
+      }).session(session);
+      if (destBalance) {
+        destBalance.quantity += output.quantityProduced;
+        await destBalance.save({ session });
+      } else {
+        await StockBalance.create(
+          [
+            {
+              itemId: output.itemId,
+              locationId: order.locationId,
+              quantity: output.quantityProduced,
+            },
+          ],
+          { session },
+        );
+      }
       await Transaction.create(
         [
           {
-            itemId: item._id,
+            itemId: output.itemId,
             orderId: order._id,
             type: "addition",
+            destinationLocationId: order.locationId,
             quantityChanged: output.quantityProduced,
-            newStockLevel: item.currentStock,
             performedBy: req.user._id,
           },
         ],
@@ -218,16 +234,6 @@ const completeOrder = async (req, res, next) => {
     await order.save({ session });
     await session.commitTransaction();
 
-    logger.info(`[Orders] Order completed: ${order.orderNumber}`);
-
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("inventory_updated", {
-        message: "Inventory updated.",
-        orderId: order._id,
-      });
-    }
-
     res.status(200).json({ success: true, data: order });
   } catch (error) {
     await session.abortTransaction();
@@ -236,5 +242,3 @@ const completeOrder = async (req, res, next) => {
     session.endSession();
   }
 };
-
-module.exports = { getOrders, createOrder, completeOrder };

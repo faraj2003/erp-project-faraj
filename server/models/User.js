@@ -1,6 +1,6 @@
 // models/User.js
 const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs"); // <-- We need our encryption tool
+const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      lowercase: true,
     },
     password: {
       type: String,
@@ -19,8 +20,22 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["staff", "manager", "admin"],
+      enum: [
+        "staff",
+        "manager",
+        "admin",
+        "shop_manager",
+        "shop_worker",
+        "procurement_manager",
+        "dispatch_manager",
+      ],
       default: "staff",
+    },
+    // ── Bind a user to a specific shop or warehouse ──
+    locationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+      default: null,
     },
   },
   {
@@ -30,13 +45,14 @@ const userSchema = new mongoose.Schema(
 
 // --- THE SECURITY HOOK ---
 // Before saving a user, encrypt their password
-userSchema.pre("save", async function () {
+userSchema.pre("save", async function (next) {
   // If the password wasn't modified, skip this step
-  if (!this.isModified("password")) return;
+  if (!this.isModified("password")) return next();
 
   // Generate the "salt" (random characters) and hash the password
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
 });
 
 // A helper method to check passwords when the user logs in later
