@@ -45,7 +45,6 @@ export default function Orders() {
 
   const handleStatusChange = (order, newStatus) => {
     if (newStatus === "Completed") {
-      // Open the modal and pre-fill actuals with required quantities (assuming 0 scrap by default)
       const initialActuals = {};
       order.inputs.forEach(input => {
         initialActuals[input.itemId._id] = { utilized: input.quantityRequired, scrapped: 0 };
@@ -131,11 +130,13 @@ export default function Orders() {
                   <div key={input._id} className="grid grid-cols-12 gap-4 items-center bg-gray-50 p-3 rounded border border-gray-200">
                     <div className="col-span-4">
                       <p className="font-bold text-gray-800">{input.itemId.name}</p>
-                      <p className="text-xs text-gray-500">Required: {input.quantityRequired} {input.itemId.unit}</p>
+                      {/* UPDATED: Changed itemId.unit to itemId.baseUnit */}
+                      <p className="text-xs text-gray-500">Required: {input.quantityRequired} {input.itemId.baseUnit}</p>
                     </div>
                     
                     <div className="col-span-4">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Actually Utilized ({input.itemId.unit})</label>
+                      {/* UPDATED: Changed itemId.unit to itemId.baseUnit */}
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Actually Utilized ({input.itemId.baseUnit})</label>
                       <input 
                         type="number" step="0.01" min="0" required
                         className="w-full border-gray-300 rounded p-2 text-sm focus:ring-blue-500 focus:border-blue-500 border"
@@ -147,7 +148,8 @@ export default function Orders() {
                     </div>
 
                     <div className="col-span-4">
-                      <label className="block text-xs font-medium text-red-600 mb-1">Scrapped/Wasted ({input.itemId.unit})</label>
+                      {/* UPDATED: Changed itemId.unit to itemId.baseUnit */}
+                      <label className="block text-xs font-medium text-red-600 mb-1">Scrapped/Wasted ({input.itemId.baseUnit})</label>
                       <input 
                         type="number" step="0.01" min="0" required
                         className="w-full border-red-300 rounded p-2 text-sm focus:ring-red-500 focus:border-red-500 border bg-red-50"

@@ -1,9 +1,24 @@
 // server/models/Item.js
 const mongoose = require("mongoose");
 
+const secondaryUnitSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      lowercase: true,
+    },
+    multiplierToBase: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false },
+);
+
 const itemSchema = new mongoose.Schema(
   {
-    // PRD-INV-037: Scope every item to its owning company
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
@@ -20,12 +35,12 @@ const itemSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    categoryHierarchy: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
+    // PRD-INV-009: Strict relational category hierarchy
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+    },
     type: {
       type: String,
       enum: ["raw_material", "finished_good"],
@@ -36,19 +51,12 @@ const itemSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
-    unit: {
+    baseUnit: {
       type: String,
       required: true,
       lowercase: true,
     },
-    secondaryUnit: {
-      type: String,
-      lowercase: true,
-    },
-    conversionFactor: {
-      type: Number,
-      min: 0,
-    },
+    secondaryUnits: [secondaryUnitSchema],
     costPerUnit: {
       type: Number,
       default: 0,
@@ -73,7 +81,6 @@ const itemSchema = new mongoose.Schema(
   },
 );
 
-// PRD-INV-005: SKU must be unique PER company, not globally
 itemSchema.index({ companyId: 1, sku: 1 }, { unique: true });
 
 module.exports = mongoose.model("Item", itemSchema);

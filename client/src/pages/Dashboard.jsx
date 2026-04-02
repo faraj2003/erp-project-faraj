@@ -1,4 +1,3 @@
-// src/pages/Dashboard.jsx
 import { useQuery } from '@tanstack/react-query';
 import {
   BarChart, Bar, LineChart, Line,
@@ -25,13 +24,14 @@ const fetchStockMovement = async () => {
   return data.data;
 };
 
-const fetchLowStock = async () => {
-  const { data } = await api.get('/api/inventory/low-stock');
+const fetchRecentOrders = async () => {
+  const { data } = await api.get('/api/orders?page=1&limit=10');
   return data.data;
 };
 
-const fetchRecentOrders = async () => {
-  const { data } = await api.get('/api/orders?page=1&limit=10');
+// NEW: Fetch consolidated dashboard metrics from the new backend endpoint
+const fetchDashboardMetrics = async () => {
+  const { data } = await api.get('/api/inventory/dashboard');
   return data.data;
 };
 
@@ -169,25 +169,24 @@ const Dashboard = () => {
   const { data: production = [], isLoading: loadingProduction, isError: errorProduction } = useQuery({ queryKey: ['analytics', 'production'], queryFn: fetchProductionMetrics, enabled: isAdmin() });
   const { data: trends = [], isLoading: loadingTrends, isError: errorTrends } = useQuery({ queryKey: ['analytics', 'trends'], queryFn: fetchMonthlyTrends, enabled: isAdmin() });
   const { data: stockMovement = [], isLoading: loadingMovement, isError: errorMovement } = useQuery({ queryKey: ['analytics', 'stock-movement'], queryFn: fetchStockMovement, enabled: isAdmin() });
-  const { data: lowStockItems = [] } = useQuery({ queryKey: ['inventory', 'low-stock'], queryFn: fetchLowStock, enabled: isAdmin() });
+  
+  // NEW: Fetch data from our new API route
+  const { data: dashboardMetrics = {} } = useQuery({ queryKey: ['inventory', 'dashboard'], queryFn: fetchDashboardMetrics, enabled: isAdmin() });
 
-  // ── NEW: Secure CSV Download Handler ──
   const handleDownloadCSV = async () => {
     try {
-      // Use axios (api) to fetch the file so it includes your auth token
-      const response = await api.get('/api/analytics/ledger/export', {
-        responseType: 'blob', // Tell axios we expect a file, not JSON
+      // UPDATED: Points to the new export route
+      const response = await api.get('/api/inventory/export/transactions', {
+        responseType: 'blob', 
       });
       
-      // Create a temporary hidden link to trigger the browser's download
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'stock_ledger.csv');
+      link.setAttribute('download', 'inventory_transactions.csv');
       document.body.appendChild(link);
       link.click();
       
-      // Clean up
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
@@ -199,13 +198,11 @@ const Dashboard = () => {
   if (!isAdmin()) return <StaffDashboard isSocketLive={isSocketLive} />;
 
   const totalUnits = production.reduce((sum, p) => sum + p.totalProduced, 0);
-  const totalItems = production.length;
   const totalMonths = trends.length;
   const peakMonth = trends.reduce((max, t) => t.totalProduced > (max?.totalProduced ?? 0) ? t : max, null);
 
   return (
     <div>
-      {/* Header WITH SECURE CSV EXPORT BUTTON */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-extrabold text-gray-800 dark:text-white">Analytics Dashboard</h2>
@@ -216,25 +213,37 @@ const Dashboard = () => {
             onClick={handleDownloadCSV}
             className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-1.5 px-4 rounded shadow-sm transition-colors"
           >
-            📥 Download Stock Ledger (CSV)
+            📥 Download Ledger (CSV)
           </button>
           <LiveBadge isLive={isSocketLive} />
         </div>
       </div>
 
-      {lowStockItems.length > 0 && (
+      {dashboardMetrics.lowStockAlerts > 0 && (
         <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl p-5 flex items-start gap-4 shadow-sm">
           <div className="flex-1">
             <h3 className="text-sm font-bold text-red-800 dark:text-red-400">Requires Attention: Low Stock Detected</h3>
-            <p className="text-xs text-red-600 dark:text-red-300 mt-1 mb-3">{lowStockItems.length} item(s) have dropped below their threshold.</p>
+            <p className="text-xs text-red-600 dark:text-red-300 mt-1 mb-3">{dashboardMetrics.lowStockAlerts} item(s) have dropped below their threshold.</p>
           </div>
         </div>
       )}
 
+      {dashboardMetrics.pendingAdjustmentsCount > 0 && (
+        <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 rounded-xl p-5 shadow-sm">
+           <h3 className="text-sm font-bold text-yellow-800 dark:text-yellow-400">Pending Approvals</h3>
+           <p className="text-xs text-yellow-700 mt-1">There are {dashboardMetrics.pendingAdjustmentsCount} stock adjustments waiting for your review.</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        {/* NEW: Total Valuation Card added to the grid */}
+        <StatCard 
+          label="Total Valuation" 
+          value={`$${(dashboardMetrics.totalValuation || 0).toFixed(2)}`} 
+          color="border-l-emerald-500" 
+        />
         <StatCard label="Total Units" value={totalUnits} unit="units" color="border-l-blue-500" />
-        <StatCard label="Finished Goods" value={totalItems} color="border-l-purple-500" />
-        <StatCard label="Active Months" value={totalMonths} color="border-l-green-500" />
+        <StatCard label="Active Months" value={totalMonths} color="border-l-indigo-500" />
         <StatCard label="Peak Month" value={peakMonth?.month ?? '—'} color="border-l-orange-400" />
       </div>
 

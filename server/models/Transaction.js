@@ -3,7 +3,6 @@ const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema(
   {
-    // PRD-INV-037: Scope every transaction to its owning company
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
@@ -67,5 +66,34 @@ const transactionSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+// ── NEW FEATURE (PRD-INV-039): Enforce Immutability ──
+
+// 1. Prevent saving modifications to an existing document
+transactionSchema.pre("save", function (next) {
+  if (!this.isNew) {
+    const err = new Error(
+      "PRD-INV-039 Violation: Transactions are immutable and cannot be modified.",
+    );
+    return next(err);
+  }
+  next();
+});
+
+// 2. Prevent query-level updates (updateOne, updateMany, findOneAndUpdate)
+transactionSchema.pre(/update/i, function (next) {
+  const err = new Error(
+    "PRD-INV-039 Violation: Transactions are immutable and cannot be updated.",
+  );
+  next(err);
+});
+
+// 3. Prevent query-level deletions (deleteOne, deleteMany, findOneAndDelete)
+transactionSchema.pre(/delete/i, function (next) {
+  const err = new Error(
+    "PRD-INV-039 Violation: Transactions are immutable and cannot be deleted.",
+  );
+  next(err);
+});
 
 module.exports = mongoose.model("Transaction", transactionSchema);

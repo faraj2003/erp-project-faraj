@@ -4,6 +4,7 @@ const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/upload");
 const {
+  getDashboardMetrics, // <-- New Function Imported
   getItems,
   createItem,
   updateItem,
@@ -17,6 +18,7 @@ const {
   createAdjustment,
   reviewAdjustment,
   uploadItemImage,
+  exportTransactionsCSV,
 } = require("../controllers/inventoryController");
 
 router.use(protect);
@@ -29,8 +31,18 @@ router
 
 // ── IMPORTANT: All named sub-routes MUST be registered before /:id ──
 
+// Dashboard Data Route (PRD-INV-001 & 002)
+router.get("/dashboard", authorize("admin", "manager"), getDashboardMetrics);
+
 // Low-stock alert route (PRD-INV-001)
 router.get("/low-stock", getLowStockItems);
+
+// Export Routes (PRD-INV-040)
+router.get(
+  "/export/transactions",
+  authorize("admin", "manager"),
+  exportTransactionsCSV,
+);
 
 // Adjustment Workflow Routes (PRD-INV-020 to 024)
 router
@@ -52,8 +64,6 @@ router
 router.patch("/:id/archive", authorize("admin", "manager"), archiveItem);
 
 // PRD-INV-005/006: Multimedia asset upload for an item
-// upload.single("image") runs multer before the controller.
-// The field name "image" must match what the frontend sends in FormData.
 router.post(
   "/:id/image",
   authorize("admin", "manager"),

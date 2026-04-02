@@ -16,7 +16,6 @@ const newOrderSchema = z.object({
     .min(1, 'Order number is required')
     .regex(/^[A-Z0-9-]+$/, 'Use uppercase letters, numbers, and dashes (e.g. PO-2026-001)'),
   
-  // ── NEW: Location Requirement ──
   locationId: z.string().min(1, 'You must select a shop or location'),
   
   notes: z.string().optional(),
@@ -62,7 +61,8 @@ const ItemRow = ({ register, errors, index, remove, items = [], qtyField, itemLa
         <option value="">Select item...</option>
         {items.map((item) => (
           <option key={item._id} value={item._id}>
-            {item.name} ({item.sku}) — {item.currentStock} {item.unit} global stock
+            {/* UPDATED: Changed item.unit to item.baseUnit */}
+            {item.name} ({item.sku}) — {item.currentStock} {item.baseUnit} global stock
           </option>
         ))}
       </select>
@@ -155,7 +155,6 @@ const NewOrder = () => {
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-        {/* Core Details */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2">Order Number *</label>
@@ -180,7 +179,6 @@ const NewOrder = () => {
           </div>
         </div>
 
-        {/* Inputs */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm border-t-4 border-t-orange-400">
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
             <div>
@@ -199,7 +197,6 @@ const NewOrder = () => {
           {typeof errors.inputs?.message === 'string' && <p className="text-red-500 text-xs mt-2">{errors.inputs.message}</p>}
         </div>
 
-        {/* Outputs */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm border-t-4 border-t-blue-500">
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
             <div>
@@ -218,7 +215,6 @@ const NewOrder = () => {
           {typeof errors.outputs?.message === 'string' && <p className="text-red-500 text-xs mt-2">{errors.outputs.message}</p>}
         </div>
 
-        {/* Actions */}
         <div className="flex justify-end gap-4 pt-4">
           <button type="button" onClick={() => navigate('/orders')} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md font-medium hover:bg-gray-50">Cancel</button>
           <button type="submit" disabled={isSubmitting || mutation.isPending} className="px-6 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 disabled:opacity-50">

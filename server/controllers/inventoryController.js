@@ -7,6 +7,90 @@ const Adjustment = require("../models/Adjustment");
 
 const VALID_TYPES = ["raw_material", "finished_good"];
 
+// Helper function to calculate multiplier based on requested unit
+const getMultiplier = (item, requestedUnit) => {
+  if (
+    !requestedUnit ||
+    requestedUnit.toLowerCase() === item.baseUnit.toLowerCase()
+  ) {
+    return 1;
+  }
+  const secUnit = item.secondaryUnits.find(
+    (u) => u.name.toLowerCase() === requestedUnit.toLowerCase(),
+  );
+  return secUnit ? secUnit.multiplierToBase : null;
+};
+
+// ── NEW FEATURE (PRD-INV-001 & 002): Dashboard Metrics ──
+
+// @desc    Get aggregated dashboard metrics (Valuation, Low Stock, Recent Movements)
+// @route   GET /api/inventory/dashboard
+exports.getDashboardMetrics = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+
+    // 1. Fetch active items and stock balances
+    const items = await Item.find({ companyId, isArchived: false }).lean();
+    const balances = await StockBalance.find({ companyId }).lean();
+
+    let totalValuation = 0;
+    let lowStockCount = 0;
+
+    // Calculate valuation and low stock count
+    items.forEach((item) => {
+      const itemBalances = balances.filter(
+        (b) => b.itemId.toString() === item._id.toString(),
+      );
+      const totalStockBase = itemBalances.reduce(
+        (sum, b) => sum + b.quantity,
+        0,
+      );
+
+      // Total Valuation = (Total Base Stock) * (Value Per Base Unit)
+      totalValuation += totalStockBase * (item.valuePerUnit || 0);
+
+      if (totalStockBase < item.minStockLevel) {
+        lowStockCount++;
+      }
+    });
+
+    // 2. Fetch pending adjustments (PRD-INV-002)
+    const pendingAdjustments = await Adjustment.find({
+      companyId,
+      status: "pending",
+    })
+      .populate("itemId", "name sku baseUnit")
+      .populate("locationId", "name")
+      .populate("requestedBy", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // 3. Fetch chronological stock movements (PRD-INV-002)
+    const recentTransactions = await Transaction.find({ companyId })
+      .populate("itemId", "name sku")
+      .populate("performedBy", "name")
+      .populate("sourceLocationId", "name")
+      .populate("destinationLocationId", "name")
+      .sort({ createdAt: -1 })
+      .limit(10) // Limit to top 10 recent movements for dashboard UI
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalItems: items.length,
+        totalValuation,
+        lowStockAlerts: lowStockCount,
+        pendingAdjustmentsCount: pendingAdjustments.length,
+        pendingAdjustments,
+        recentTransactions,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get all items with their multi-location balances
 // @route   GET /api/inventory
 exports.getItems = async (req, res, next) => {
@@ -38,17 +122,24 @@ exports.getItems = async (req, res, next) => {
       const itemBalances = balances.filter(
         (b) => b.itemId.toString() === item._id.toString(),
       );
-      const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
+      const totalStockBase = itemBalances.reduce(
+        (sum, b) => sum + b.quantity,
+        0,
+      );
 
-      const currentSecondaryStock =
-        item.conversionFactor && item.conversionFactor > 0
-          ? totalStock / item.conversionFactor
-          : null;
+      const stockEquivalents = {};
+      if (item.secondaryUnits && item.secondaryUnits.length > 0) {
+        item.secondaryUnits.forEach((u) => {
+          stockEquivalents[u.name] = parseFloat(
+            (totalStockBase / u.multiplierToBase).toFixed(2),
+          );
+        });
+      }
 
       return {
         ...item,
-        currentStock: totalStock,
-        currentSecondaryStock,
+        currentStock: totalStockBase,
+        stockEquivalents,
         balances: itemBalances,
       };
     });
@@ -165,13 +256,16 @@ exports.addStock = async (req, res, next) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    let baseQtyToAdd = rawQty;
-    const receivingInSecondaryUnit =
-      unit && item.secondaryUnit && unit === item.secondaryUnit;
-
-    if (receivingInSecondaryUnit && item.conversionFactor > 0) {
-      baseQtyToAdd = rawQty * item.conversionFactor;
+    const multiplier = getMultiplier(item, unit);
+    if (!multiplier) {
+      return res
+        .status(400)
+        .json({
+          message: `Invalid unit specified: ${unit}. Not found in item configuration.`,
+        });
     }
+
+    const baseQtyToAdd = rawQty * multiplier;
 
     let balance = await StockBalance.findOne({
       companyId,
@@ -217,16 +311,32 @@ exports.addStock = async (req, res, next) => {
 // @route   POST /api/inventory/:id/issue
 exports.issueStock = async (req, res, next) => {
   try {
-    const { locationId, quantityToIssue } = req.body;
+    const { locationId, quantityToIssue, unit } = req.body;
     const itemId = req.params.id;
     const companyId = req.companyId;
-    const issueQty = Number(quantityToIssue);
+    const rawQty = Number(quantityToIssue);
 
-    if (!locationId || !issueQty || issueQty <= 0) {
+    if (!locationId || !rawQty || rawQty <= 0) {
       return res
         .status(400)
         .json({ message: "Valid Location and positive quantity required" });
     }
+
+    const item = await Item.findOne({ _id: itemId, companyId }).lean();
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const multiplier = getMultiplier(item, unit);
+    if (!multiplier) {
+      return res
+        .status(400)
+        .json({
+          message: `Invalid unit specified: ${unit}. Not found in item configuration.`,
+        });
+    }
+
+    const baseQtyToIssue = rawQty * multiplier;
 
     const balance = await StockBalance.findOne({
       companyId,
@@ -236,14 +346,14 @@ exports.issueStock = async (req, res, next) => {
       rackName: "Default",
     });
 
-    if (!balance || balance.quantity < issueQty) {
+    if (!balance || balance.quantity < baseQtyToIssue) {
       return res.status(400).json({
         message:
           "PRD-INV-015 Violation: Cannot issue materials exceeding available local stock.",
       });
     }
 
-    balance.quantity -= issueQty;
+    balance.quantity -= baseQtyToIssue;
     await balance.save();
 
     await Transaction.create({
@@ -251,7 +361,7 @@ exports.issueStock = async (req, res, next) => {
       itemId,
       type: "deduction",
       sourceLocationId: locationId,
-      quantityChanged: issueQty,
+      quantityChanged: baseQtyToIssue,
       newStockLevel: balance.quantity,
       performedBy: req.user._id,
     });
@@ -266,12 +376,13 @@ exports.issueStock = async (req, res, next) => {
 // @route   POST /api/inventory/:id/transfer
 exports.transferStock = async (req, res, next) => {
   try {
-    const { sourceLocationId, destinationLocationId, quantity } = req.body;
+    const { sourceLocationId, destinationLocationId, quantity, unit } =
+      req.body;
     const itemId = req.params.id;
     const companyId = req.companyId;
-    const transferQty = Number(quantity);
+    const rawQty = Number(quantity);
 
-    if (!sourceLocationId || !destinationLocationId || transferQty <= 0) {
+    if (!sourceLocationId || !destinationLocationId || rawQty <= 0) {
       return res.status(400).json({ message: "Invalid transfer parameters" });
     }
 
@@ -281,6 +392,20 @@ exports.transferStock = async (req, res, next) => {
         .json({ message: "Source and destination cannot be the same" });
     }
 
+    const item = await Item.findOne({ _id: itemId, companyId }).lean();
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const multiplier = getMultiplier(item, unit);
+    if (!multiplier) {
+      return res
+        .status(400)
+        .json({ message: `Invalid unit specified: ${unit}.` });
+    }
+
+    const baseTransferQty = rawQty * multiplier;
+
     const sourceBalance = await StockBalance.findOne({
       companyId,
       itemId,
@@ -289,13 +414,13 @@ exports.transferStock = async (req, res, next) => {
       rackName: "Default",
     });
 
-    if (!sourceBalance || sourceBalance.quantity < transferQty) {
+    if (!sourceBalance || sourceBalance.quantity < baseTransferQty) {
       return res
         .status(400)
         .json({ message: "Insufficient stock at the source location" });
     }
 
-    sourceBalance.quantity -= transferQty;
+    sourceBalance.quantity -= baseTransferQty;
     await sourceBalance.save();
 
     let destBalance = await StockBalance.findOne({
@@ -307,14 +432,14 @@ exports.transferStock = async (req, res, next) => {
     });
 
     if (destBalance) {
-      destBalance.quantity += transferQty;
+      destBalance.quantity += baseTransferQty;
       await destBalance.save();
     } else {
       destBalance = await StockBalance.create({
         companyId,
         itemId,
         locationId: destinationLocationId,
-        quantity: transferQty,
+        quantity: baseTransferQty,
       });
     }
 
@@ -324,7 +449,7 @@ exports.transferStock = async (req, res, next) => {
       type: "transfer",
       sourceLocationId,
       destinationLocationId,
-      quantityChanged: transferQty,
+      quantityChanged: baseTransferQty,
       newStockLevel: destBalance.quantity,
       performedBy: req.user._id,
     });
@@ -335,14 +460,12 @@ exports.transferStock = async (req, res, next) => {
   }
 };
 
-// ── ADJUSTMENT WORKFLOW (PRD-INV-020 to 024) ──
-
 // @desc    Get all adjustments
 // @route   GET /api/inventory/adjustments
 exports.getAdjustments = async (req, res, next) => {
   try {
     const adjustments = await Adjustment.find({ companyId: req.companyId })
-      .populate("itemId", "name sku")
+      .populate("itemId", "name sku baseUnit")
       .populate("locationId", "name")
       .populate("requestedBy", "name")
       .populate("reviewedBy", "name")
@@ -354,7 +477,7 @@ exports.getAdjustments = async (req, res, next) => {
   }
 };
 
-// @desc    Create an inventory adjustment (Draft or Pending)
+// @desc    Create an inventory adjustment
 // @route   POST /api/inventory/adjustments
 exports.createAdjustment = async (req, res, next) => {
   try {
@@ -387,7 +510,7 @@ exports.createAdjustment = async (req, res, next) => {
   }
 };
 
-// @desc    Review (Approve/Reject) an adjustment (PRD-INV-024)
+// @desc    Review (Approve/Reject) an adjustment
 // @route   PATCH /api/inventory/adjustments/:id/review
 exports.reviewAdjustment = async (req, res, next) => {
   try {
@@ -450,9 +573,11 @@ exports.reviewAdjustment = async (req, res, next) => {
       });
     } else {
       if (balance.quantity + adjustment.quantityChange < 0) {
-        return res.status(400).json({
-          message: "Cannot approve: Insufficient stock for this deduction.",
-        });
+        return res
+          .status(400)
+          .json({
+            message: "Cannot approve: Insufficient stock for this deduction.",
+          });
       }
       balance.quantity += adjustment.quantityChange;
       await balance.save();
@@ -470,11 +595,13 @@ exports.reviewAdjustment = async (req, res, next) => {
       performedBy: req.user._id,
     });
 
-    res.status(200).json({
-      message: "Adjustment approved and stock updated",
-      adjustment,
-      balance,
-    });
+    res
+      .status(200)
+      .json({
+        message: "Adjustment approved and stock updated",
+        adjustment,
+        balance,
+      });
   } catch (error) {
     next(error);
   }
@@ -508,13 +635,10 @@ exports.getLowStockItems = async (req, res, next) => {
   }
 };
 
-// @desc    Upload or replace an item's image (PRD-INV-005/006)
+// @desc    Upload or replace an item's image
 // @route   POST /api/inventory/:id/image
-// @access  Admin, Manager
 exports.uploadItemImage = async (req, res, next) => {
   try {
-    // multer has already processed the file and put it on req.file.
-    // If multer rejected it (wrong type, too large), it called next(error) already.
     if (!req.file) {
       return res.status(400).json({ message: "No image file provided." });
     }
@@ -528,9 +652,6 @@ exports.uploadItemImage = async (req, res, next) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // Build a publicly accessible URL path.
-    // The /uploads static directory is served by app.js (see route registration).
-    // In production swap this for your CDN or S3 presigned URL.
     const imageUrl = `/uploads/${req.file.filename}`;
     item.imageUrl = imageUrl;
     await item.save();
@@ -540,6 +661,51 @@ exports.uploadItemImage = async (req, res, next) => {
       imageUrl,
       item,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Export transactions to CSV
+// @route   GET /api/inventory/export/transactions
+exports.exportTransactionsCSV = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+
+    const transactions = await Transaction.find({ companyId })
+      .populate("itemId", "sku name")
+      .populate("performedBy", "name")
+      .populate("sourceLocationId", "name")
+      .populate("destinationLocationId", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    let csv =
+      "Transaction ID,Date,Type,Item SKU,Item Name,Quantity Changed,New Stock Level,Source Location,Destination Location,Performed By\n";
+
+    const escape = (str) => {
+      if (str === null || str === undefined) return "";
+      return `"${String(str).replace(/"/g, '""')}"`;
+    };
+
+    transactions.forEach((txn) => {
+      const date = txn.createdAt ? new Date(txn.createdAt).toISOString() : "";
+      const sku = txn.itemId?.sku || "";
+      const itemName = txn.itemId?.name || "";
+      const source = txn.sourceLocationId?.name || "";
+      const dest = txn.destinationLocationId?.name || "";
+      const user = txn.performedBy?.name || "";
+
+      csv += `${txn.transactionId},${date},${txn.type},${escape(sku)},${escape(itemName)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(source)},${escape(dest)},${escape(user)}\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="inventory-transactions.csv"',
+    );
+
+    res.status(200).send(csv);
   } catch (error) {
     next(error);
   }

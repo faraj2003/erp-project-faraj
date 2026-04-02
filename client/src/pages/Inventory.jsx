@@ -7,39 +7,33 @@ export default function Inventory() {
   const queryClient = useQueryClient();
   const userRole = useAuthStore((state) => state.getRole());
   
-  // Permissions based on roles
   const canReceive = ['admin', 'manager', 'procurement_manager'].includes(userRole);
   const canTransfer = ['admin', 'manager', 'dispatch_manager'].includes(userRole);
   const canCreateItem = ['admin', 'manager', 'procurement_manager'].includes(userRole);
-  // NEW: Permission for issuing stock
   const canIssue = ['admin', 'manager', 'dispatch_manager', 'shop_worker'].includes(userRole);
   
-  // Modal States
   const [selectedItemForStock, setSelectedItemForStock] = useState(null);
   const [selectedItemForTransfer, setSelectedItemForTransfer] = useState(null);
-  const [selectedItemForIssue, setSelectedItemForIssue] = useState(null); // NEW
+  const [selectedItemForIssue, setSelectedItemForIssue] = useState(null);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
-  // Form States
-  const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '' });
-  const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
-  const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '' }); // NEW
+  const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '', unit: '' });
+  const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
+  const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
-  // New Product Form State
+  // Updated for hierarchical units
   const [addItemForm, setAddItemForm] = useState({
-    sku: '', name: '', type: 'raw_material', minStockLevel: '', unit: '', secondaryUnit: '', conversionFactor: ''
+    sku: '', name: '', type: 'raw_material', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: ''
   });
 
-  // Fetch Items 
   const { data: items, isLoading: itemsLoading } = useQuery({
     queryKey: ['inventory'],
     queryFn: async () => {
       const { data } = await axios.get('/api/inventory');
-      return data;
+      return data.data; // Adjusted to extract 'data' array from the standardized response
     },
   });
 
-  // Fetch Locations
   const { data: locations } = useQuery({
     queryKey: ['locations'],
     queryFn: async () => {
@@ -48,58 +42,62 @@ export default function Inventory() {
     },
   });
 
-  // Add Item Mutation
   const addItemMutation = useMutation({
     mutationFn: async (payload) => axios.post('/api/inventory', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setIsAddItemModalOpen(false);
-      setAddItemForm({ sku: '', name: '', type: 'raw_material', minStockLevel: '', unit: '', secondaryUnit: '', conversionFactor: '' });
+      setAddItemForm({ sku: '', name: '', type: 'raw_material', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: '' });
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to add new product.")
   });
 
-  // Add Stock Mutation
   const addStockMutation = useMutation({
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/stock`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setSelectedItemForStock(null);
-      setAddStockForm({ locationId: '', quantityToAdd: '' });
+      setAddStockForm({ locationId: '', quantityToAdd: '', unit: '' });
     },
+    onError: (error) => alert(error.response?.data?.message || "Failed to receive stock.")
   });
 
-  // Transfer Stock Mutation
   const transferStockMutation = useMutation({
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/transfer`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setSelectedItemForTransfer(null);
-      setTransferForm({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
+      setTransferForm({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
     },
     onError: (error) => alert(error.response?.data?.message || "Transfer failed")
   });
 
-  // NEW: Issue Stock Mutation
   const issueStockMutation = useMutation({
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/issue`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setSelectedItemForIssue(null);
-      setIssueForm({ locationId: '', quantityToIssue: '' });
+      setIssueForm({ locationId: '', quantityToIssue: '', unit: '' });
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to issue stock.")
   });
 
-  // Handlers
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
-    const payload = { ...addItemForm, minStockLevel: Number(addItemForm.minStockLevel) };
-    if (!payload.secondaryUnit) {
-      delete payload.secondaryUnit;
-      delete payload.conversionFactor;
-    } else {
-      payload.conversionFactor = Number(payload.conversionFactor);
+    const payload = { 
+      sku: addItemForm.sku,
+      name: addItemForm.name,
+      type: addItemForm.type,
+      minStockLevel: Number(addItemForm.minStockLevel),
+      baseUnit: addItemForm.baseUnit,
+      secondaryUnits: []
+    };
+    
+    if (addItemForm.secUnitName && addItemForm.secUnitMultiplier) {
+      payload.secondaryUnits.push({
+        name: addItemForm.secUnitName,
+        multiplierToBase: Number(addItemForm.secUnitMultiplier)
+      });
     }
     addItemMutation.mutate(payload);
   };
@@ -107,23 +105,39 @@ export default function Inventory() {
   const handleAddStockSubmit = (e) => {
     e.preventDefault();
     if (!addStockForm.locationId || !addStockForm.quantityToAdd) return;
-    addStockMutation.mutate({ id: selectedItemForStock._id, payload: { locationId: addStockForm.locationId, quantityToAdd: Number(addStockForm.quantityToAdd) } });
+    addStockMutation.mutate({ 
+      id: selectedItemForStock._id, 
+      payload: { ...addStockForm, quantityToAdd: Number(addStockForm.quantityToAdd) } 
+    });
   };
 
   const handleTransferSubmit = (e) => {
     e.preventDefault();
     if (!transferForm.sourceLocationId || !transferForm.destinationLocationId || !transferForm.quantity) return;
-    transferStockMutation.mutate({ id: selectedItemForTransfer._id, payload: { ...transferForm, quantity: Number(transferForm.quantity) } });
+    transferStockMutation.mutate({ 
+      id: selectedItemForTransfer._id, 
+      payload: { ...transferForm, quantity: Number(transferForm.quantity) } 
+    });
   };
 
-  // NEW: Issue handler
   const handleIssueSubmit = (e) => {
     e.preventDefault();
     if (!issueForm.locationId || !issueForm.quantityToIssue) return;
     issueStockMutation.mutate({ 
       id: selectedItemForIssue._id, 
-      payload: { locationId: issueForm.locationId, quantityToIssue: Number(issueForm.quantityToIssue) } 
+      payload: { ...issueForm, quantityToIssue: Number(issueForm.quantityToIssue) } 
     });
+  };
+
+  // Helper for rendering available units in dropdowns
+  const renderUnitOptions = (item) => {
+    const options = [<option key="base" value={item.baseUnit}>{item.baseUnit} (Base)</option>];
+    if (item.secondaryUnits) {
+      item.secondaryUnits.forEach(u => {
+        options.push(<option key={u.name} value={u.name}>{u.name}</option>);
+      });
+    }
+    return options;
   };
 
   if (itemsLoading) return <div className="p-4 text-gray-600">Loading Inventory...</div>;
@@ -152,28 +166,26 @@ export default function Inventory() {
               <div className="text-right">
                 <p className="text-sm text-gray-500 uppercase tracking-wide">Total Global Stock</p>
                 <p className={`text-2xl font-bold ${item.currentStock <= item.minStockLevel ? 'text-red-600' : 'text-green-600'}`}>
-                  {item.currentStock} {item.unit}
+                  {item.currentStock} {item.baseUnit}
                 </p>
-                {item.secondaryUnit && (
-                  <p className="text-sm text-gray-500 font-medium mt-1">
-                    ≈ {item.currentSecondaryStock} {item.secondaryUnit}
+                {/* Dynamically render all secondary unit equivalents */}
+                {item.stockEquivalents && Object.entries(item.stockEquivalents).map(([uName, uVal]) => (
+                  <p key={uName} className="text-sm text-gray-500 font-medium mt-1">
+                    ≈ {uVal} {uName}
                   </p>
-                )}
+                ))}
               </div>
             </div>
 
             <div className="mt-4 bg-gray-50 p-4 rounded border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location:</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location (Base Units):</h3>
               {item.balances?.length > 0 ? (
                 <ul className="space-y-2">
                   {item.balances.map((balance) => (
                     <li key={balance._id} className="flex justify-between text-sm bg-white p-2 rounded border border-gray-200 shadow-sm">
                       <span className="text-gray-700 font-medium">{balance.locationId?.name || 'Unknown'} <span className="text-xs text-gray-400 font-normal">({balance.locationId?.type})</span></span>
                       <div className="text-right">
-                         <span className="font-bold text-gray-800 block">{balance.quantity} {item.unit}</span>
-                         {item.secondaryUnit && (
-                            <span className="text-xs text-gray-500">({balance.quantity * item.conversionFactor} {item.secondaryUnit})</span>
-                         )}
+                         <span className="font-bold text-gray-800 block">{balance.quantity} {item.baseUnit}</span>
                       </div>
                     </li>
                   ))}
@@ -183,21 +195,19 @@ export default function Inventory() {
               )}
             </div>
 
-            {/* Actions */}
             <div className="mt-4 flex gap-3">
               {canReceive && (
-                <button onClick={() => setSelectedItemForStock(item)} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
+                <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit});}} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
                   + Receive Stock
                 </button>
               )}
-              {/* NEW ISSUE BUTTON */}
               {canIssue && item.balances?.length > 0 && (
-                <button onClick={() => setSelectedItemForIssue(item)} className="bg-red-50 text-red-700 hover:bg-red-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-red-200">
+                <button onClick={() => {setSelectedItemForIssue(item); setIssueForm({...issueForm, unit: item.baseUnit});}} className="bg-red-50 text-red-700 hover:bg-red-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-red-200">
                   - Issue Stock
                 </button>
               )}
               {canTransfer && item.balances?.length > 0 && (
-                <button onClick={() => setSelectedItemForTransfer(item)} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-blue-200">
+                <button onClick={() => {setSelectedItemForTransfer(item); setTransferForm({...transferForm, unit: item.baseUnit});}} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-blue-200">
                   ⇄ Transfer Stock
                 </button>
               )}
@@ -218,7 +228,7 @@ export default function Inventory() {
                   <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.name} onChange={(e) => setAddItemForm({ ...addItemForm, name: e.target.value })} required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">SKU (e.g. RAW-001) *</label>
+                  <label className="block text-sm font-medium mb-1">SKU *</label>
                   <input type="text" className="w-full border border-gray-300 rounded p-2 uppercase" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
                 </div>
               </div>
@@ -232,7 +242,7 @@ export default function Inventory() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Minimum Stock Level *</label>
+                  <label className="block text-sm font-medium mb-1">Minimum Stock Level (Base Units) *</label>
                   <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.minStockLevel} onChange={(e) => setAddItemForm({ ...addItemForm, minStockLevel: e.target.value })} required />
                 </div>
               </div>
@@ -240,23 +250,23 @@ export default function Inventory() {
               <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-6 mt-2">
                 <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Measurement Units</h3>
                 <div className="mb-4">
-                  <label className="block text-sm font-medium mb-1">Primary Unit (e.g. Box, Kg) *</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.unit} onChange={(e) => setAddItemForm({ ...addItemForm, unit: e.target.value })} placeholder="e.g. box" required />
+                  <label className="block text-sm font-medium mb-1">Base Unit (e.g. unit, kg, liter) *</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2 lowercase" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value.toLowerCase() })} placeholder="e.g. piece" required />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Secondary Unit <span className="text-gray-400 font-normal">(Optional)</span></label>
-                    <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.secondaryUnit} onChange={(e) => setAddItemForm({ ...addItemForm, secondaryUnit: e.target.value })} placeholder="e.g. pieces" />
+                    <label className="block text-sm font-medium mb-1">Secondary Unit (e.g. Box, Pallet)</label>
+                    <input type="text" className="w-full border border-gray-300 rounded p-2 lowercase" value={addItemForm.secUnitName} onChange={(e) => setAddItemForm({ ...addItemForm, secUnitName: e.target.value.toLowerCase() })} placeholder="e.g. box" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Conversion Factor {addItemForm.secondaryUnit && '*'}</label>
-                    <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.conversionFactor} onChange={(e) => setAddItemForm({ ...addItemForm, conversionFactor: e.target.value })} placeholder={addItemForm.secondaryUnit ? `e.g. 12 (pieces per ${addItemForm.unit || 'unit'})` : "Leave empty if no sec. unit"} required={!!addItemForm.secondaryUnit} disabled={!addItemForm.secondaryUnit} />
+                    <label className="block text-sm font-medium mb-1">Multiplier to Base Unit</label>
+                    <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.secUnitMultiplier} onChange={(e) => setAddItemForm({ ...addItemForm, secUnitMultiplier: e.target.value })} placeholder={addItemForm.secUnitName ? `How many ${addItemForm.baseUnit || 'base'} in a ${addItemForm.secUnitName}?` : ""} required={!!addItemForm.secUnitName} disabled={!addItemForm.secUnitName} />
                   </div>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">{addItemMutation.isLoading ? 'Saving...' : 'Create Product'}</button>
+                <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Create Product</button>
               </div>
             </form>
           </div>
@@ -273,23 +283,31 @@ export default function Inventory() {
                 <label className="block text-sm font-medium mb-1">Destination Location</label>
                 <select className="w-full border border-gray-300 rounded p-2" value={addStockForm.locationId} onChange={(e) => setAddStockForm({ ...addStockForm, locationId: e.target.value })} required>
                   <option value="">-- Select a Location --</option>
-                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name} ({loc.type})</option>)}
+                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
                 </select>
               </div>
-              <div className="mb-6">
-                <label className="block text-sm font-medium mb-1">Quantity ({selectedItemForStock.unit})</label>
-                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addStockForm.quantityToAdd} onChange={(e) => setAddStockForm({ ...addStockForm, quantityToAdd: e.target.value })} required />
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Quantity</label>
+                  <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addStockForm.quantityToAdd} onChange={(e) => setAddStockForm({ ...addStockForm, quantityToAdd: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Unit</label>
+                  <select className="w-full border border-gray-300 rounded p-2" value={addStockForm.unit} onChange={(e) => setAddStockForm({ ...addStockForm, unit: e.target.value })} required>
+                    {renderUnitOptions(selectedItemForStock)}
+                  </select>
+                </div>
               </div>
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setSelectedItemForStock(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={addStockMutation.isLoading} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-900">{addStockMutation.isLoading ? 'Processing...' : 'Confirm Receipt'}</button>
+                <button type="submit" disabled={addStockMutation.isLoading} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-900">Confirm Receipt</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- ISSUE STOCK MODAL (NEW) --- */}
+      {/* --- ISSUE STOCK MODAL --- */}
       {selectedItemForIssue && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-red-600">
@@ -301,18 +319,26 @@ export default function Inventory() {
                   <option value="">-- Select a Location --</option>
                   {selectedItemForIssue.balances.map(b => (
                     <option key={b.locationId._id} value={b.locationId._id}>
-                      {b.locationId.name} (Avail: {b.quantity})
+                      {b.locationId.name} (Avail: {b.quantity} {selectedItemForIssue.baseUnit})
                     </option>
                   ))}
                 </select>
               </div>
-              <div className="mb-6">
-                <label className="block text-sm font-medium mb-1">Quantity to Issue ({selectedItemForIssue.unit})</label>
-                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={issueForm.quantityToIssue} onChange={(e) => setIssueForm({ ...issueForm, quantityToIssue: e.target.value })} required />
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Quantity</label>
+                  <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={issueForm.quantityToIssue} onChange={(e) => setIssueForm({ ...issueForm, quantityToIssue: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Unit</label>
+                  <select className="w-full border border-gray-300 rounded p-2" value={issueForm.unit} onChange={(e) => setIssueForm({ ...issueForm, unit: e.target.value })} required>
+                    {renderUnitOptions(selectedItemForIssue)}
+                  </select>
+                </div>
               </div>
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setSelectedItemForIssue(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={issueStockMutation.isLoading} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">{issueStockMutation.isLoading ? 'Processing...' : 'Confirm Issue'}</button>
+                <button type="submit" disabled={issueStockMutation.isLoading} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Confirm Issue</button>
               </div>
             </form>
           </div>
@@ -331,7 +357,7 @@ export default function Inventory() {
                   <option value="">-- Select Source --</option>
                   {selectedItemForTransfer.balances.map(b => (
                     <option key={b.locationId._id} value={b.locationId._id}>
-                      {b.locationId.name} (Avail: {b.quantity})
+                      {b.locationId.name} (Avail: {b.quantity} {selectedItemForTransfer.baseUnit})
                     </option>
                   ))}
                 </select>
@@ -340,16 +366,24 @@ export default function Inventory() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">To (Destination)</label>
                 <select className="w-full border border-gray-300 rounded p-2" value={transferForm.destinationLocationId} onChange={(e) => setTransferForm({ ...transferForm, destinationLocationId: e.target.value })} required>
                   <option value="">-- Select Destination --</option>
-                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name} ({loc.type})</option>)}
+                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
                 </select>
               </div>
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity to Transfer ({selectedItemForTransfer.unit})</label>
-                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <select className="w-full border border-gray-300 rounded p-2" value={transferForm.unit} onChange={(e) => setTransferForm({ ...transferForm, unit: e.target.value })} required>
+                     {renderUnitOptions(selectedItemForTransfer)}
+                  </select>
+                </div>
               </div>
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setSelectedItemForTransfer(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={transferStockMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">{transferStockMutation.isLoading ? 'Processing...' : 'Confirm Transfer'}</button>
+                <button type="submit" disabled={transferStockMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Confirm Transfer</button>
               </div>
             </form>
           </div>
