@@ -1,23 +1,28 @@
-// routes/analyticsRoutes.js
+// server/routes/analyticsRoutes.js
 const express = require("express");
 const router = express.Router();
+const { protect, authorize } = require("../middleware/authMiddleware");
 const {
   getProductionMetrics,
   getMonthlyTrends,
   getStockMovement,
+  getDashboardMetrics, // NEW
+  getStockLedger, // NEW
+  exportStockLedgerCSV, // NEW
 } = require("../controllers/analyticsController");
-const { protect, authorize } = require("../middleware/authMiddleware");
 
-// All analytics routes are Admin only
-router.use(protect, authorize("admin"));
+router.use(protect);
+// Admin/Manager level access for all analytical and audit data
+router.use(authorize("admin", "manager"));
 
-// GET /api/analytics/production — Total units produced per item (bar chart)
+// Existing Chart Routes
 router.get("/production", getProductionMetrics);
-
-// GET /api/analytics/trends — Monthly production volume (line chart)
 router.get("/trends", getMonthlyTrends);
-
-// GET /api/analytics/stock-movement — Additions vs deductions per item
 router.get("/stock-movement", getStockMovement);
+
+// NEW: PRD Reporting & Audit Routes
+router.get("/dashboard", getDashboardMetrics);
+router.get("/ledger", getStockLedger);
+router.get("/ledger/export", exportStockLedgerCSV);
 
 module.exports = router;

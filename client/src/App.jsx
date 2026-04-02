@@ -4,10 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
+import Adjustments from './pages/Adjustments'; // <-- NEW IMPORT
 import Orders from './pages/Orders';
 import NewOrder from './pages/NewOrder';
 import Users from './pages/Users';
-import Locations from './pages/Locations'; // <-- NEW IMPORT
+import Locations from './pages/Locations';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
 
@@ -35,6 +36,7 @@ function App() {
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
+              <Route path="/adjustments" element={<Adjustments />} /> {/* <-- NEW ROUTE */}
               <Route path="/orders" element={<Orders />} />
             </Route>
           </Route>
@@ -43,7 +45,7 @@ function App() {
           <Route element={<ProtectedRoute roles={['manager', 'admin']} />}>
             <Route element={<AppShell />}>
               <Route path="/orders/new" element={<NewOrder />} />
-              <Route path="/locations" element={<Locations />} /> {/* <-- NEW ROUTE */}
+              <Route path="/locations" element={<Locations />} />
             </Route>
           </Route>
 

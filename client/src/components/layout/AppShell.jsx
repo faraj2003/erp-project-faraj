@@ -16,19 +16,31 @@ const navItems = [
     label: 'Dashboard',
     path: '/dashboard',
     icon: '📊',
-    roles: ['staff', 'manager', 'admin'],
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'],
   },
   {
     label: 'Inventory',
     path: '/inventory',
     icon: '📦',
-    roles: ['staff', 'manager', 'admin'],
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
+  },
+  {
+    label: 'Adjustments',
+    path: '/adjustments',
+    icon: '📝',
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'], 
   },
   {
     label: 'Orders',
     path: '/orders',
     icon: '🏭',
-    roles: ['staff', 'manager', 'admin'],
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'],
+  },
+  {
+    label: 'Locations', // <-- RESTORED LOCATIONS BUTTON
+    path: '/locations',
+    icon: '🏢',
+    roles: ['manager', 'admin'],
   },
   {
     label: 'Users',
@@ -42,7 +54,7 @@ const AppShell = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  // ── NEW: Dark Mode State & Persistence ──
+  // Dark Mode State & Persistence
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark');
 
   useEffect(() => {
@@ -54,7 +66,6 @@ const AppShell = () => {
       localStorage.setItem('theme', 'light');
     }
   }, [isDark]);
-  // ────────────────────────────────────────
 
   // Mount the real-time socket for all authenticated pages
   useInventorySocket();
@@ -134,7 +145,6 @@ const AppShell = () => {
           </p>
           
           <div className="flex items-center gap-3">
-            {/* ── NEW: Dark Mode Toggle Button ── */}
             <button
               onClick={() => setIsDark(!isDark)}
               className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"

@@ -7,30 +7,27 @@ export default function Inventory() {
   const queryClient = useQueryClient();
   const userRole = useAuthStore((state) => state.getRole());
   
-  // Permissions based on roles (aligns with backend schema)
+  // Permissions based on roles
   const canReceive = ['admin', 'manager', 'procurement_manager'].includes(userRole);
   const canTransfer = ['admin', 'manager', 'dispatch_manager'].includes(userRole);
-  // Reusing canReceive logic for creating items since it shares the same roles
   const canCreateItem = ['admin', 'manager', 'procurement_manager'].includes(userRole);
+  // NEW: Permission for issuing stock
+  const canIssue = ['admin', 'manager', 'dispatch_manager', 'shop_worker'].includes(userRole);
   
   // Modal States
   const [selectedItemForStock, setSelectedItemForStock] = useState(null);
   const [selectedItemForTransfer, setSelectedItemForTransfer] = useState(null);
+  const [selectedItemForIssue, setSelectedItemForIssue] = useState(null); // NEW
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
   // Form States
   const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '' });
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
+  const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '' }); // NEW
   
   // New Product Form State
   const [addItemForm, setAddItemForm] = useState({
-    sku: '',
-    name: '',
-    type: 'raw_material',
-    minStockLevel: '',
-    unit: '',
-    secondaryUnit: '',
-    conversionFactor: ''
+    sku: '', name: '', type: 'raw_material', minStockLevel: '', unit: '', secondaryUnit: '', conversionFactor: ''
   });
 
   // Fetch Items 
@@ -57,13 +54,9 @@ export default function Inventory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setIsAddItemModalOpen(false);
-      setAddItemForm({
-        sku: '', name: '', type: 'raw_material', minStockLevel: '', unit: '', secondaryUnit: '', conversionFactor: ''
-      });
+      setAddItemForm({ sku: '', name: '', type: 'raw_material', minStockLevel: '', unit: '', secondaryUnit: '', conversionFactor: '' });
     },
-    onError: (error) => {
-      alert(error.response?.data?.message || "Failed to add new product.");
-    }
+    onError: (error) => alert(error.response?.data?.message || "Failed to add new product.")
   });
 
   // Add Stock Mutation
@@ -84,29 +77,30 @@ export default function Inventory() {
       setSelectedItemForTransfer(null);
       setTransferForm({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
     },
-    onError: (error) => {
-      alert(error.response?.data?.message || "Transfer failed");
-    }
+    onError: (error) => alert(error.response?.data?.message || "Transfer failed")
+  });
+
+  // NEW: Issue Stock Mutation
+  const issueStockMutation = useMutation({
+    mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/issue`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setSelectedItemForIssue(null);
+      setIssueForm({ locationId: '', quantityToIssue: '' });
+    },
+    onError: (error) => alert(error.response?.data?.message || "Failed to issue stock.")
   });
 
   // Handlers
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
-    
-    // Prepare payload, ensuring numerical values are parsed properly
-    const payload = {
-      ...addItemForm,
-      minStockLevel: Number(addItemForm.minStockLevel),
-    };
-
-    // Clean up empty optional fields
+    const payload = { ...addItemForm, minStockLevel: Number(addItemForm.minStockLevel) };
     if (!payload.secondaryUnit) {
       delete payload.secondaryUnit;
       delete payload.conversionFactor;
     } else {
       payload.conversionFactor = Number(payload.conversionFactor);
     }
-
     addItemMutation.mutate(payload);
   };
 
@@ -122,6 +116,16 @@ export default function Inventory() {
     transferStockMutation.mutate({ id: selectedItemForTransfer._id, payload: { ...transferForm, quantity: Number(transferForm.quantity) } });
   };
 
+  // NEW: Issue handler
+  const handleIssueSubmit = (e) => {
+    e.preventDefault();
+    if (!issueForm.locationId || !issueForm.quantityToIssue) return;
+    issueStockMutation.mutate({ 
+      id: selectedItemForIssue._id, 
+      payload: { locationId: issueForm.locationId, quantityToIssue: Number(issueForm.quantityToIssue) } 
+    });
+  };
+
   if (itemsLoading) return <div className="p-4 text-gray-600">Loading Inventory...</div>;
 
   return (
@@ -129,10 +133,7 @@ export default function Inventory() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
         {canCreateItem && (
-          <button 
-            onClick={() => setIsAddItemModalOpen(true)} 
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors"
-          >
+          <button onClick={() => setIsAddItemModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors">
             + Add New Product
           </button>
         )}
@@ -153,7 +154,6 @@ export default function Inventory() {
                 <p className={`text-2xl font-bold ${item.currentStock <= item.minStockLevel ? 'text-red-600' : 'text-green-600'}`}>
                   {item.currentStock} {item.unit}
                 </p>
-                {/* Secondary Unit Display */}
                 {item.secondaryUnit && (
                   <p className="text-sm text-gray-500 font-medium mt-1">
                     ≈ {item.currentSecondaryStock} {item.secondaryUnit}
@@ -162,7 +162,6 @@ export default function Inventory() {
               </div>
             </div>
 
-            {/* Location Breakdown */}
             <div className="mt-4 bg-gray-50 p-4 rounded border border-gray-100">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location:</h3>
               {item.balances?.length > 0 ? (
@@ -189,6 +188,12 @@ export default function Inventory() {
               {canReceive && (
                 <button onClick={() => setSelectedItemForStock(item)} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
                   + Receive Stock
+                </button>
+              )}
+              {/* NEW ISSUE BUTTON */}
+              {canIssue && item.balances?.length > 0 && (
+                <button onClick={() => setSelectedItemForIssue(item)} className="bg-red-50 text-red-700 hover:bg-red-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-red-200">
+                  - Issue Stock
                 </button>
               )}
               {canTransfer && item.balances?.length > 0 && (
@@ -232,15 +237,12 @@ export default function Inventory() {
                 </div>
               </div>
 
-              {/* Units Section */}
               <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-6 mt-2">
                 <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Measurement Units</h3>
-                
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-1">Primary Unit (e.g. Box, Kg) *</label>
                   <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.unit} onChange={(e) => setAddItemForm({ ...addItemForm, unit: e.target.value })} placeholder="e.g. box" required />
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Secondary Unit <span className="text-gray-400 font-normal">(Optional)</span></label>
@@ -248,26 +250,10 @@ export default function Inventory() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Conversion Factor {addItemForm.secondaryUnit && '*'}</label>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      min="0.01" 
-                      className="w-full border border-gray-300 rounded p-2" 
-                      value={addItemForm.conversionFactor} 
-                      onChange={(e) => setAddItemForm({ ...addItemForm, conversionFactor: e.target.value })} 
-                      placeholder={addItemForm.secondaryUnit ? `e.g. 12 (pieces per ${addItemForm.unit || 'unit'})` : "Leave empty if no sec. unit"}
-                      required={!!addItemForm.secondaryUnit} 
-                      disabled={!addItemForm.secondaryUnit}
-                    />
+                    <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.conversionFactor} onChange={(e) => setAddItemForm({ ...addItemForm, conversionFactor: e.target.value })} placeholder={addItemForm.secondaryUnit ? `e.g. 12 (pieces per ${addItemForm.unit || 'unit'})` : "Leave empty if no sec. unit"} required={!!addItemForm.secondaryUnit} disabled={!addItemForm.secondaryUnit} />
                   </div>
                 </div>
-                {addItemForm.secondaryUnit && addItemForm.conversionFactor && (
-                  <p className="text-xs text-blue-600 mt-2 font-medium">
-                    Conversion setup: 1 {addItemForm.unit || 'Unit'} = {addItemForm.conversionFactor} {addItemForm.secondaryUnit}.
-                  </p>
-                )}
               </div>
-
               <div className="flex justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                 <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">{addItemMutation.isLoading ? 'Saving...' : 'Create Product'}</button>
@@ -280,7 +266,7 @@ export default function Inventory() {
       {/* --- ADD STOCK MODAL --- */}
       {selectedItemForStock && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-gray-800">
             <h2 className="text-xl font-bold mb-4">Receive Stock: {selectedItemForStock.name}</h2>
             <form onSubmit={handleAddStockSubmit}>
               <div className="mb-4">
@@ -303,6 +289,36 @@ export default function Inventory() {
         </div>
       )}
 
+      {/* --- ISSUE STOCK MODAL (NEW) --- */}
+      {selectedItemForIssue && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-red-600">
+            <h2 className="text-xl font-bold mb-4">Issue Stock: {selectedItemForIssue.name}</h2>
+            <form onSubmit={handleIssueSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Source Location</label>
+                <select className="w-full border border-gray-300 rounded p-2" value={issueForm.locationId} onChange={(e) => setIssueForm({ ...issueForm, locationId: e.target.value })} required>
+                  <option value="">-- Select a Location --</option>
+                  {selectedItemForIssue.balances.map(b => (
+                    <option key={b.locationId._id} value={b.locationId._id}>
+                      {b.locationId.name} (Avail: {b.quantity})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-1">Quantity to Issue ({selectedItemForIssue.unit})</label>
+                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={issueForm.quantityToIssue} onChange={(e) => setIssueForm({ ...issueForm, quantityToIssue: e.target.value })} required />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setSelectedItemForIssue(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="submit" disabled={issueStockMutation.isLoading} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">{issueStockMutation.isLoading ? 'Processing...' : 'Confirm Issue'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- TRANSFER STOCK MODAL --- */}
       {selectedItemForTransfer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -311,7 +327,7 @@ export default function Inventory() {
             <form onSubmit={handleTransferSubmit}>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">From (Source)</label>
-                <select className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
+                <select className="w-full border border-gray-300 rounded p-2" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
                   <option value="">-- Select Source --</option>
                   {selectedItemForTransfer.balances.map(b => (
                     <option key={b.locationId._id} value={b.locationId._id}>
@@ -322,18 +338,18 @@ export default function Inventory() {
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">To (Destination)</label>
-                <select className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.destinationLocationId} onChange={(e) => setTransferForm({ ...transferForm, destinationLocationId: e.target.value })} required>
+                <select className="w-full border border-gray-300 rounded p-2" value={transferForm.destinationLocationId} onChange={(e) => setTransferForm({ ...transferForm, destinationLocationId: e.target.value })} required>
                   <option value="">-- Select Destination --</option>
                   {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name} ({loc.type})</option>)}
                 </select>
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Quantity to Transfer ({selectedItemForTransfer.unit})</label>
-                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
+                <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
               </div>
               <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setSelectedItemForTransfer(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium">Cancel</button>
-                <button type="submit" disabled={transferStockMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium">{transferStockMutation.isLoading ? 'Processing...' : 'Confirm Transfer'}</button>
+                <button type="button" onClick={() => setSelectedItemForTransfer(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="submit" disabled={transferStockMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">{transferStockMutation.isLoading ? 'Processing...' : 'Confirm Transfer'}</button>
               </div>
             </form>
           </div>

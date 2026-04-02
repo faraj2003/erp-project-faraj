@@ -1,8 +1,14 @@
-// models/Transaction.js
+// server/models/Transaction.js
 const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema(
   {
+    transactionId: {
+      type: String,
+      required: true,
+      unique: true,
+      default: () => `TXN-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    },
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",
@@ -16,8 +22,19 @@ const transactionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["addition", "deduction"],
+      // NEW: Added "adjustment" to the valid transaction types
+      enum: ["addition", "deduction", "transfer", "adjustment"],
       required: true,
+    },
+    sourceLocationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+      default: null,
+    },
+    destinationLocationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+      default: null,
     },
     quantityChanged: {
       type: Number,
@@ -25,7 +42,7 @@ const transactionSchema = new mongoose.Schema(
     },
     newStockLevel: {
       type: Number,
-      required: true,
+      required: false,
     },
     performedBy: {
       type: mongoose.Schema.Types.ObjectId,
