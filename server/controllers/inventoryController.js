@@ -1,4 +1,4 @@
-// controllers/inventoryController.js
+// server/controllers/inventoryController.js
 const Item = require("../models/Item");
 const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
@@ -18,9 +18,15 @@ exports.getItems = async (req, res, next) => {
       );
       const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
 
+      // Calculate secondary stock if the item has a secondary unit configuration
+      const secondaryStock = item.conversionFactor
+        ? totalStock * item.conversionFactor
+        : null;
+
       return {
         ...item,
         currentStock: totalStock,
+        currentSecondaryStock: secondaryStock, // Helpful for frontend display!
         balances: itemBalances,
       };
     });
@@ -35,6 +41,8 @@ exports.getItems = async (req, res, next) => {
 // @route   POST /api/inventory
 exports.createItem = async (req, res, next) => {
   try {
+    // This automatically accepts 'secondaryUnit' and 'conversionFactor'
+    // now that they are in the Mongoose schema.
     const item = await Item.create(req.body);
     res.status(201).json(item);
   } catch (error) {

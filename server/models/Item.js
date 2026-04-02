@@ -1,4 +1,4 @@
-// models/Item.js
+// server/models/Item.js
 const mongoose = require("mongoose");
 
 const itemSchema = new mongoose.Schema(
@@ -19,16 +19,26 @@ const itemSchema = new mongoose.Schema(
       enum: ["raw_material", "finished_good"],
       required: true,
     },
-    // NOTE: currentStock has been removed! It is now calculated via StockBalance.
     minStockLevel: {
       type: Number,
       required: true,
       min: 0,
     },
+    // Primary measuring unit (e.g., 'box', 'kg')
     unit: {
       type: String,
       required: true,
       lowercase: true,
+    },
+    // Custom Secondary unit (e.g., 'pieces', 'grams')
+    secondaryUnit: {
+      type: String,
+      lowercase: true,
+    },
+    // Conversion factor (e.g., if 1 box = 12 pieces, conversionFactor is 12)
+    conversionFactor: {
+      type: Number,
+      min: 0,
     },
     costPerUnit: {
       type: Number,

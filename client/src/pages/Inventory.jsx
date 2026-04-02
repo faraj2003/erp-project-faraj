@@ -6,14 +6,32 @@ import { useAuthStore } from '../store/authStore';
 export default function Inventory() {
   const queryClient = useQueryClient();
   const userRole = useAuthStore((state) => state.getRole());
+  
+  // Permissions based on roles (aligns with backend schema)
   const canReceive = ['admin', 'manager', 'procurement_manager'].includes(userRole);
   const canTransfer = ['admin', 'manager', 'dispatch_manager'].includes(userRole);
+  // Reusing canReceive logic for creating items since it shares the same roles
+  const canCreateItem = ['admin', 'manager', 'procurement_manager'].includes(userRole);
   
+  // Modal States
   const [selectedItemForStock, setSelectedItemForStock] = useState(null);
   const [selectedItemForTransfer, setSelectedItemForTransfer] = useState(null);
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
+  // Form States
   const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '' });
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '' });
+  
+  // New Product Form State
+  const [addItemForm, setAddItemForm] = useState({
+    sku: '',
+    name: '',
+    type: 'raw_material',
+    minStockLevel: '',
+    unit: '',
+    secondaryUnit: '',
+    conversionFactor: ''
+  });
 
   // Fetch Items 
   const { data: items, isLoading: itemsLoading } = useQuery({
@@ -31,6 +49,21 @@ export default function Inventory() {
       const { data } = await axios.get('/api/locations');
       return data;
     },
+  });
+
+  // Add Item Mutation
+  const addItemMutation = useMutation({
+    mutationFn: async (payload) => axios.post('/api/inventory', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setIsAddItemModalOpen(false);
+      setAddItemForm({
+        sku: '', name: '', type: 'raw_material', minStockLevel: '', unit: '', secondaryUnit: '', conversionFactor: ''
+      });
+    },
+    onError: (error) => {
+      alert(error.response?.data?.message || "Failed to add new product.");
+    }
   });
 
   // Add Stock Mutation
@@ -56,6 +89,27 @@ export default function Inventory() {
     }
   });
 
+  // Handlers
+  const handleAddItemSubmit = (e) => {
+    e.preventDefault();
+    
+    // Prepare payload, ensuring numerical values are parsed properly
+    const payload = {
+      ...addItemForm,
+      minStockLevel: Number(addItemForm.minStockLevel),
+    };
+
+    // Clean up empty optional fields
+    if (!payload.secondaryUnit) {
+      delete payload.secondaryUnit;
+      delete payload.conversionFactor;
+    } else {
+      payload.conversionFactor = Number(payload.conversionFactor);
+    }
+
+    addItemMutation.mutate(payload);
+  };
+
   const handleAddStockSubmit = (e) => {
     e.preventDefault();
     if (!addStockForm.locationId || !addStockForm.quantityToAdd) return;
@@ -72,7 +126,17 @@ export default function Inventory() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Global Inventory Overview</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
+        {canCreateItem && (
+          <button 
+            onClick={() => setIsAddItemModalOpen(true)} 
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors"
+          >
+            + Add New Product
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-6">
         {items?.map((item) => (
@@ -89,6 +153,12 @@ export default function Inventory() {
                 <p className={`text-2xl font-bold ${item.currentStock <= item.minStockLevel ? 'text-red-600' : 'text-green-600'}`}>
                   {item.currentStock} {item.unit}
                 </p>
+                {/* Secondary Unit Display */}
+                {item.secondaryUnit && (
+                  <p className="text-sm text-gray-500 font-medium mt-1">
+                    ≈ {item.currentSecondaryStock} {item.secondaryUnit}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -100,7 +170,12 @@ export default function Inventory() {
                   {item.balances.map((balance) => (
                     <li key={balance._id} className="flex justify-between text-sm bg-white p-2 rounded border border-gray-200 shadow-sm">
                       <span className="text-gray-700 font-medium">{balance.locationId?.name || 'Unknown'} <span className="text-xs text-gray-400 font-normal">({balance.locationId?.type})</span></span>
-                      <span className="font-bold text-gray-800">{balance.quantity} {item.unit}</span>
+                      <div className="text-right">
+                         <span className="font-bold text-gray-800 block">{balance.quantity} {item.unit}</span>
+                         {item.secondaryUnit && (
+                            <span className="text-xs text-gray-500">({balance.quantity * item.conversionFactor} {item.secondaryUnit})</span>
+                         )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -125,6 +200,82 @@ export default function Inventory() {
           </div>
         ))}
       </div>
+
+      {/* --- ADD NEW PRODUCT MODAL --- */}
+      {isAddItemModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full shadow-xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
+            <h2 className="text-xl font-bold mb-4">Add New Product to Catalog</h2>
+            <form onSubmit={handleAddItemSubmit}>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Product Name *</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.name} onChange={(e) => setAddItemForm({ ...addItemForm, name: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">SKU (e.g. RAW-001) *</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2 uppercase" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Type *</label>
+                  <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.type} onChange={(e) => setAddItemForm({ ...addItemForm, type: e.target.value })} required>
+                    <option value="raw_material">Raw Material</option>
+                    <option value="finished_good">Finished Good</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Minimum Stock Level *</label>
+                  <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.minStockLevel} onChange={(e) => setAddItemForm({ ...addItemForm, minStockLevel: e.target.value })} required />
+                </div>
+              </div>
+
+              {/* Units Section */}
+              <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-6 mt-2">
+                <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Measurement Units</h3>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Primary Unit (e.g. Box, Kg) *</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.unit} onChange={(e) => setAddItemForm({ ...addItemForm, unit: e.target.value })} placeholder="e.g. box" required />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Secondary Unit <span className="text-gray-400 font-normal">(Optional)</span></label>
+                    <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.secondaryUnit} onChange={(e) => setAddItemForm({ ...addItemForm, secondaryUnit: e.target.value })} placeholder="e.g. pieces" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Conversion Factor {addItemForm.secondaryUnit && '*'}</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      min="0.01" 
+                      className="w-full border border-gray-300 rounded p-2" 
+                      value={addItemForm.conversionFactor} 
+                      onChange={(e) => setAddItemForm({ ...addItemForm, conversionFactor: e.target.value })} 
+                      placeholder={addItemForm.secondaryUnit ? `e.g. 12 (pieces per ${addItemForm.unit || 'unit'})` : "Leave empty if no sec. unit"}
+                      required={!!addItemForm.secondaryUnit} 
+                      disabled={!addItemForm.secondaryUnit}
+                    />
+                  </div>
+                </div>
+                {addItemForm.secondaryUnit && addItemForm.conversionFactor && (
+                  <p className="text-xs text-blue-600 mt-2 font-medium">
+                    Conversion setup: 1 {addItemForm.unit || 'Unit'} = {addItemForm.conversionFactor} {addItemForm.secondaryUnit}.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">{addItemMutation.isLoading ? 'Saving...' : 'Create Product'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* --- ADD STOCK MODAL --- */}
       {selectedItemForStock && (
@@ -162,7 +313,6 @@ export default function Inventory() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">From (Source)</label>
                 <select className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
                   <option value="">-- Select Source --</option>
-                  {/* Only show locations where this item actually has stock */}
                   {selectedItemForTransfer.balances.map(b => (
                     <option key={b.locationId._id} value={b.locationId._id}>
                       {b.locationId.name} (Avail: {b.quantity})
