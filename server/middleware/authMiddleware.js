@@ -1,9 +1,9 @@
-// middleware/authMiddleware.js
+// server/middleware/authMiddleware.js
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
 
-// 1. Verify the JWT and attach the user to req
+// 1. Verify the JWT, attach the user, and inject companyId onto req
 const protect = async (req, res, next) => {
   let token;
 
@@ -14,18 +14,28 @@ const protect = async (req, res, next) => {
     try {
       token = req.headers.authorization.split(" ")[1];
 
-      // jwt.verify throws JsonWebTokenError / TokenExpiredError — caught by errorHandler
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
       req.user = await User.findById(decoded.id).select("-password");
 
       if (!req.user) {
-        return next(new AppError("User belonging to this token no longer exists", 401));
+        return next(
+          new AppError("User belonging to this token no longer exists", 401),
+        );
       }
+
+      // PRD-INV-037: Make companyId available on every request so all
+      // controllers can scope their queries without repeating themselves.
+      if (!req.user.companyId) {
+        return next(
+          new AppError("User account is not associated with a company", 403),
+        );
+      }
+      req.companyId = req.user.companyId;
 
       return next();
     } catch (error) {
-      return next(error); // Passed to errorHandler which handles JWT errors specifically
+      return next(error);
     }
   }
 
@@ -41,8 +51,8 @@ const authorize = (...roles) => {
       return next(
         new AppError(
           `Role '${req.user.role}' is not authorized to access this route`,
-          403
-        )
+          403,
+        ),
       );
     }
     next();

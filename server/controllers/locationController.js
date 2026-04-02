@@ -1,10 +1,13 @@
+// server/controllers/locationController.js
 const Location = require("../models/Location");
 
-// @desc    Get all locations
+// @desc    Get all locations for this company
 // @route   GET /api/locations
 exports.getLocations = async (req, res, next) => {
   try {
-    const locations = await Location.find().populate("managerId", "name email");
+    const locations = await Location.find({
+      companyId: req.companyId,
+    }).populate("managerId", "name email");
     res.status(200).json(locations);
   } catch (error) {
     next(error);
@@ -16,7 +19,12 @@ exports.getLocations = async (req, res, next) => {
 exports.createLocation = async (req, res, next) => {
   try {
     const { name, type, managerId } = req.body;
-    const location = await Location.create({ name, type, managerId });
+    const location = await Location.create({
+      companyId: req.companyId,
+      name,
+      type,
+      managerId,
+    });
     res.status(201).json(location);
   } catch (error) {
     next(error);
@@ -27,7 +35,10 @@ exports.createLocation = async (req, res, next) => {
 // @route   POST /api/locations/:id/zones
 exports.addZone = async (req, res, next) => {
   try {
-    const location = await Location.findById(req.params.id);
+    const location = await Location.findOne({
+      _id: req.params.id,
+      companyId: req.companyId,
+    });
     if (!location)
       return res.status(404).json({ message: "Location not found" });
 
@@ -43,7 +54,10 @@ exports.addZone = async (req, res, next) => {
 // @route   POST /api/locations/:id/zones/:zoneId/racks
 exports.addRack = async (req, res, next) => {
   try {
-    const location = await Location.findById(req.params.id);
+    const location = await Location.findOne({
+      _id: req.params.id,
+      companyId: req.companyId,
+    });
     if (!location)
       return res.status(404).json({ message: "Location not found" });
 

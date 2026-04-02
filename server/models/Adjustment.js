@@ -3,6 +3,13 @@ const mongoose = require("mongoose");
 
 const adjustmentSchema = new mongoose.Schema(
   {
+    // PRD-INV-037: Scope every adjustment to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",
@@ -13,7 +20,6 @@ const adjustmentSchema = new mongoose.Schema(
       ref: "Location",
       required: true,
     },
-    // Can be positive (found extra stock) or negative (lost/damaged stock)
     quantityChange: {
       type: Number,
       required: true,
@@ -23,7 +29,6 @@ const adjustmentSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    // PRD-INV-020 to 023: Formal workflow states
     status: {
       type: String,
       enum: ["draft", "pending", "approved", "rejected"],
@@ -34,7 +39,6 @@ const adjustmentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    // The controller who approved/rejected the request
     reviewedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

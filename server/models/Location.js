@@ -1,11 +1,18 @@
+// server/models/Location.js
 const mongoose = require("mongoose");
 
 const locationSchema = new mongoose.Schema(
   {
+    // PRD-INV-037: Scope every location to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     type: {
@@ -18,7 +25,6 @@ const locationSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
-    // Nested structure for Zones and Racks
     zones: [
       {
         name: { type: String, required: true },
@@ -34,5 +40,8 @@ const locationSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+// Location names must be unique per company, not globally
+locationSchema.index({ companyId: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model("Location", locationSchema);

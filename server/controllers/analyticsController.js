@@ -2,16 +2,15 @@
 const Transaction = require("../models/Transaction");
 const Item = require("../models/Item");
 const StockBalance = require("../models/StockBalance");
-const Adjustment = require("../models/Adjustment"); // Requires the Adjustment model from Step 3
-
-// --- EXISTING ENDPOINTS ---
+const Adjustment = require("../models/Adjustment");
 
 // @desc    Get total production per item (bar chart data)
 // @route   GET /api/analytics/production
 const getProductionMetrics = async (req, res, next) => {
   try {
+    const companyId = req.companyId;
     const metrics = await Transaction.aggregate([
-      { $match: { type: "addition" } },
+      { $match: { companyId, type: "addition" } },
       {
         $lookup: {
           from: "items",
@@ -41,8 +40,9 @@ const getProductionMetrics = async (req, res, next) => {
 // @route   GET /api/analytics/trends
 const getMonthlyTrends = async (req, res, next) => {
   try {
+    const companyId = req.companyId;
     const trends = await Transaction.aggregate([
-      { $match: { type: "addition" } },
+      { $match: { companyId, type: "addition" } },
       {
         $group: {
           _id: {
@@ -85,7 +85,9 @@ const getMonthlyTrends = async (req, res, next) => {
 // @route   GET /api/analytics/stock-movement
 const getStockMovement = async (req, res, next) => {
   try {
+    const companyId = req.companyId;
     const movement = await Transaction.aggregate([
+      { $match: { companyId } },
       {
         $lookup: {
           from: "items",
@@ -124,29 +126,25 @@ const getStockMovement = async (req, res, next) => {
   }
 };
 
-// ── NEW: DASHBOARD & REPORTING ENDPOINTS (PRD-INV-001, 002, 039, 040) ──
-
-// @desc    Get top-level dashboard metrics (Valuation, Alerts, Pending Adjustments)
+// @desc    Get top-level dashboard metrics
 // @route   GET /api/analytics/dashboard
 const getDashboardMetrics = async (req, res, next) => {
   try {
-    const items = await Item.find({ isArchived: false }).lean();
-    const balances = await StockBalance.find().lean();
+    const companyId = req.companyId;
+    const items = await Item.find({ companyId, isArchived: false }).lean();
+    const balances = await StockBalance.find({ companyId }).lean();
 
     let totalValuation = 0;
     const lowStockAlerts = [];
 
-    // Calculate total stock and valuation across all locations
     items.forEach((item) => {
       const itemBalances = balances.filter(
         (b) => b.itemId.toString() === item._id.toString(),
       );
       const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
 
-      // Add to total valuation (PRD-INV-001)
       totalValuation += totalStock * (item.valuePerUnit || 0);
 
-      // Check low stock threshold (PRD-INV-001)
       if (totalStock <= item.minStockLevel) {
         lowStockAlerts.push({
           itemId: item._id,
@@ -158,8 +156,10 @@ const getDashboardMetrics = async (req, res, next) => {
       }
     });
 
-    // Fetch pending adjustments (PRD-INV-002)
-    const pendingAdjustments = await Adjustment.find({ status: "pending" })
+    const pendingAdjustments = await Adjustment.find({
+      companyId,
+      status: "pending",
+    })
       .populate("itemId", "name sku")
       .populate("locationId", "name")
       .populate("requestedBy", "name")
@@ -180,12 +180,11 @@ const getDashboardMetrics = async (req, res, next) => {
   }
 };
 
-// @desc    Get Immutable Stock Ledger (Audit Trail)
+// @desc    Get immutable stock ledger (PRD-INV-039)
 // @route   GET /api/analytics/ledger
 const getStockLedger = async (req, res, next) => {
   try {
-    // PRD-INV-039: Comprehensive, immutable historical log
-    const ledger = await Transaction.find()
+    const ledger = await Transaction.find({ companyId: req.companyId })
       .populate("itemId", "name sku")
       .populate("sourceLocationId", "name")
       .populate("destinationLocationId", "name")
@@ -198,11 +197,11 @@ const getStockLedger = async (req, res, next) => {
   }
 };
 
-// @desc    Export Stock Ledger to CSV
+// @desc    Export stock ledger to CSV (PRD-INV-040)
 // @route   GET /api/analytics/ledger/export
 const exportStockLedgerCSV = async (req, res, next) => {
   try {
-    const ledger = await Transaction.find()
+    const ledger = await Transaction.find({ companyId: req.companyId })
       .populate("itemId", "name sku")
       .populate("sourceLocationId", "name")
       .populate("destinationLocationId", "name")
@@ -210,7 +209,6 @@ const exportStockLedgerCSV = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // PRD-INV-040: Data Portability to CSV
     const headers = [
       "Transaction ID",
       "Date",
@@ -235,7 +233,6 @@ const exportStockLedgerCSV = async (req, res, next) => {
       t.performedBy?.name || "System",
     ]);
 
-    // Format as comma-separated string, escaping quotes
     const csvContent = [
       headers.join(","),
       ...rows.map((row) =>

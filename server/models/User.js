@@ -1,4 +1,4 @@
-// models/User.js
+// server/models/User.js
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
@@ -31,7 +31,14 @@ const userSchema = new mongoose.Schema(
       ],
       default: "staff",
     },
-    // ── Bind a user to a specific shop or warehouse ──
+    // PRD-INV-037: Every user belongs to exactly one company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
+    // Bind a user to a specific shop or warehouse
     locationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
@@ -43,19 +50,13 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-// --- THE SECURITY HOOK ---
-// Before saving a user, encrypt their password
 userSchema.pre("save", async function (next) {
-  // If the password wasn't modified, skip this step
   if (!this.isModified("password")) return next();
-
-  // Generate the "salt" (random characters) and hash the password
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// A helper method to check passwords when the user logs in later
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };

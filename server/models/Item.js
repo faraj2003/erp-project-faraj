@@ -3,18 +3,23 @@ const mongoose = require("mongoose");
 
 const itemSchema = new mongoose.Schema(
   {
+    // PRD-INV-037: Scope every item to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
     sku: {
       type: String,
       required: true,
-      unique: true,
-      index: true,
       uppercase: true,
+      index: true,
     },
     name: {
       type: String,
       required: true,
     },
-    // NEW: Category Hierarchies (e.g., ["Raw Materials", "Metals", "Aluminum"])
     categoryHierarchy: [
       {
         type: String,
@@ -54,12 +59,10 @@ const itemSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    // NEW: Multimedia Asset Integration
     imageUrl: {
       type: String,
       default: null,
     },
-    // NEW: Archiving
     isArchived: {
       type: Boolean,
       default: false,
@@ -69,5 +72,8 @@ const itemSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+// PRD-INV-005: SKU must be unique PER company, not globally
+itemSchema.index({ companyId: 1, sku: 1 }, { unique: true });
 
 module.exports = mongoose.model("Item", itemSchema);

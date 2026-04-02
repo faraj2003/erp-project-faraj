@@ -3,6 +3,13 @@ const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema(
   {
+    // PRD-INV-037: Scope every transaction to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
     transactionId: {
       type: String,
       required: true,
@@ -22,8 +29,14 @@ const transactionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      // NEW: Added "adjustment" to the valid transaction types
-      enum: ["addition", "deduction", "transfer", "adjustment"],
+      enum: [
+        "addition",
+        "deduction",
+        "transfer",
+        "adjustment",
+        "shop_consumption",
+        "scrap_return",
+      ],
       required: true,
     },
     sourceLocationId: {

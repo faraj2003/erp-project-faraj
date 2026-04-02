@@ -1,8 +1,6 @@
 // app.js
-// Exports a configured Express app WITHOUT connecting to DB or starting a server.
-// This lets Supertest spin up the app in memory during tests without side effects.
-
 require("dotenv").config();
+const path = require("path");
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -17,14 +15,13 @@ const createApp = () => {
   app.use(cors({ origin: process.env.CLIENT_URL || "*", credentials: true }));
   app.use(express.json());
 
-  // Disable morgan in test env to keep output clean
   if (process.env.NODE_ENV !== "test") {
     app.use(morgan("dev"));
   }
 
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000, // Higher limit in tests
+    max: 1000,
     standardHeaders: false,
     legacyHeaders: false,
   });
@@ -37,6 +34,10 @@ const createApp = () => {
   });
 
   app.use("/api/", apiLimiter);
+
+  // PRD-INV-005/006: Serve uploaded item images as static files.
+  // In production, replace this with a CDN or cloud storage URL in the controller.
+  app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
   app.get("/health", (req, res) =>
     res

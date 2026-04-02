@@ -1,12 +1,11 @@
-// controllers/userController.js
+// server/controllers/userController.js
 const User = require("../models/User");
 
-// @desc    Get all users
+// @desc    Get all users for this company
 // @route   GET /api/users
-// @access  Private/Admin
 exports.getUsers = async (req, res, next) => {
   try {
-    const users = await User.find()
+    const users = await User.find({ companyId: req.companyId })
       .populate("locationId", "name type")
       .select("-password");
 
@@ -18,10 +17,12 @@ exports.getUsers = async (req, res, next) => {
 
 // @desc    Get single user by ID
 // @route   GET /api/users/:id
-// @access  Private/Admin
 exports.getUserById = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id)
+    const user = await User.findOne({
+      _id: req.params.id,
+      companyId: req.companyId,
+    })
       .populate("locationId", "name type")
       .select("-password");
 
@@ -35,9 +36,8 @@ exports.getUserById = async (req, res, next) => {
   }
 };
 
-// @desc    Create a new user
+// @desc    Create a new user under the same company
 // @route   POST /api/users
-// @access  Private/Admin
 exports.createUser = async (req, res, next) => {
   try {
     const { name, email, password, role, locationId } = req.body;
@@ -50,6 +50,7 @@ exports.createUser = async (req, res, next) => {
     }
 
     const user = await User.create({
+      companyId: req.companyId,
       name,
       email,
       password,
@@ -63,6 +64,7 @@ exports.createUser = async (req, res, next) => {
       email: user.email,
       role: user.role,
       locationId: user.locationId,
+      companyId: user.companyId,
     });
   } catch (error) {
     next(error);
@@ -71,12 +73,14 @@ exports.createUser = async (req, res, next) => {
 
 // @desc    Update user role
 // @route   PATCH /api/users/:id/role
-// @access  Private/Admin
 exports.updateUserRole = async (req, res, next) => {
   try {
     const { role } = req.body;
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findOne({
+      _id: req.params.id,
+      companyId: req.companyId,
+    });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -85,10 +89,7 @@ exports.updateUserRole = async (req, res, next) => {
     user.role = role;
     await user.save();
 
-    res.status(200).json({
-      message: "User role updated successfully",
-      user,
-    });
+    res.status(200).json({ message: "User role updated successfully", user });
   } catch (error) {
     next(error);
   }
@@ -96,10 +97,12 @@ exports.updateUserRole = async (req, res, next) => {
 
 // @desc    Delete a user
 // @route   DELETE /api/users/:id
-// @access  Private/Admin
 exports.deleteUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findOne({
+      _id: req.params.id,
+      companyId: req.companyId,
+    });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -107,9 +110,7 @@ exports.deleteUser = async (req, res, next) => {
 
     await user.deleteOne();
 
-    res.status(200).json({
-      message: "User removed successfully",
-    });
+    res.status(200).json({ message: "User removed successfully" });
   } catch (error) {
     next(error);
   }

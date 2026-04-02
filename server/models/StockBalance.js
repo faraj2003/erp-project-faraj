@@ -1,8 +1,15 @@
-// models/StockBalance.js
+// server/models/StockBalance.js
 const mongoose = require("mongoose");
 
 const stockBalanceSchema = new mongoose.Schema(
   {
+    // PRD-INV-037: Scope every balance record to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",
@@ -15,8 +22,8 @@ const stockBalanceSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    zoneName: { type: String, default: "Default" }, // For Requirement 4
-    rackName: { type: String, default: "Default" }, // For Requirement 4
+    zoneName: { type: String, default: "Default" },
+    rackName: { type: String, default: "Default" },
     quantity: {
       type: Number,
       required: true,
@@ -27,9 +34,9 @@ const stockBalanceSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Ensure an item only has one balance per exact location/zone/rack combo
+// Unique balance per company + item + location + zone + rack
 stockBalanceSchema.index(
-  { itemId: 1, locationId: 1, zoneName: 1, rackName: 1 },
+  { companyId: 1, itemId: 1, locationId: 1, zoneName: 1, rackName: 1 },
   { unique: true },
 );
 

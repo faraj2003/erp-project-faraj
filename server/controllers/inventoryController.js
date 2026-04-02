@@ -1,15 +1,36 @@
 // server/controllers/inventoryController.js
+const path = require("path");
 const Item = require("../models/Item");
 const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
-const Adjustment = require("../models/Adjustment"); // NEW IMPORT
+const Adjustment = require("../models/Adjustment");
+
+const VALID_TYPES = ["raw_material", "finished_good"];
 
 // @desc    Get all items with their multi-location balances
 // @route   GET /api/inventory
 exports.getItems = async (req, res, next) => {
   try {
-    const items = await Item.find({ isArchived: false }).lean();
-    const balances = await StockBalance.find()
+    const { type, search } = req.query;
+    const companyId = req.companyId;
+
+    if (type && !VALID_TYPES.includes(type)) {
+      return res.status(400).json({
+        message: `Invalid type filter. Must be one of: ${VALID_TYPES.join(", ")}`,
+      });
+    }
+
+    const query = { companyId, isArchived: false };
+    if (type) query.type = type;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { sku: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const items = await Item.find(query).lean();
+    const balances = await StockBalance.find({ companyId })
       .populate("locationId", "name type")
       .lean();
 
@@ -19,19 +40,24 @@ exports.getItems = async (req, res, next) => {
       );
       const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
 
-      const secondaryStock = item.conversionFactor
-        ? totalStock * item.conversionFactor
-        : null;
+      const currentSecondaryStock =
+        item.conversionFactor && item.conversionFactor > 0
+          ? totalStock / item.conversionFactor
+          : null;
 
       return {
         ...item,
         currentStock: totalStock,
-        currentSecondaryStock: secondaryStock,
+        currentSecondaryStock,
         balances: itemBalances,
       };
     });
 
-    res.status(200).json(itemsWithBalances);
+    res.status(200).json({
+      success: true,
+      count: itemsWithBalances.length,
+      data: itemsWithBalances,
+    });
   } catch (error) {
     next(error);
   }
@@ -41,8 +67,8 @@ exports.getItems = async (req, res, next) => {
 // @route   POST /api/inventory
 exports.createItem = async (req, res, next) => {
   try {
-    const item = await Item.create(req.body);
-    res.status(201).json(item);
+    const item = await Item.create({ ...req.body, companyId: req.companyId });
+    res.status(201).json({ success: true, data: item });
   } catch (error) {
     next(error);
   }
@@ -52,14 +78,15 @@ exports.createItem = async (req, res, next) => {
 // @route   PUT /api/inventory/:id
 exports.updateItem = async (req, res, next) => {
   try {
-    const item = await Item.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const item = await Item.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
+      req.body,
+      { new: true, runValidators: true },
+    );
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
     }
-    res.status(200).json(item);
+    res.status(200).json({ success: true, data: item });
   } catch (error) {
     next(error);
   }
@@ -69,8 +96,8 @@ exports.updateItem = async (req, res, next) => {
 // @route   PATCH /api/inventory/:id/archive
 exports.archiveItem = async (req, res, next) => {
   try {
-    const item = await Item.findByIdAndUpdate(
-      req.params.id,
+    const item = await Item.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       { isArchived: true },
       { new: true },
     );
@@ -88,8 +115,9 @@ exports.archiveItem = async (req, res, next) => {
 exports.deleteItem = async (req, res, next) => {
   try {
     const itemId = req.params.id;
+    const companyId = req.companyId;
 
-    const balances = await StockBalance.find({ itemId });
+    const balances = await StockBalance.find({ itemId, companyId });
     const hasActiveStock = balances.some((b) => b.quantity > 0);
     if (hasActiveStock) {
       return res.status(400).json({
@@ -98,7 +126,7 @@ exports.deleteItem = async (req, res, next) => {
       });
     }
 
-    const history = await Transaction.findOne({ itemId });
+    const history = await Transaction.findOne({ itemId, companyId });
     if (history) {
       return res.status(400).json({
         message:
@@ -106,7 +134,7 @@ exports.deleteItem = async (req, res, next) => {
       });
     }
 
-    const item = await Item.findByIdAndDelete(itemId);
+    const item = await Item.findOneAndDelete({ _id: itemId, companyId });
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
     }
@@ -117,20 +145,36 @@ exports.deleteItem = async (req, res, next) => {
   }
 };
 
-// @desc    Add stock to a specific location
+// @desc    Add stock to a specific location (Receipt)
 // @route   POST /api/inventory/:id/stock
 exports.addStock = async (req, res, next) => {
   try {
-    const { locationId, quantityToAdd } = req.body;
+    const { locationId, quantityToAdd, unit } = req.body;
     const itemId = req.params.id;
+    const companyId = req.companyId;
+    const rawQty = Number(quantityToAdd);
 
-    if (!locationId || !quantityToAdd || quantityToAdd <= 0) {
+    if (!locationId || !rawQty || rawQty <= 0) {
       return res
         .status(400)
         .json({ message: "Valid Location and positive quantity required" });
     }
 
+    const item = await Item.findOne({ _id: itemId, companyId }).lean();
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    let baseQtyToAdd = rawQty;
+    const receivingInSecondaryUnit =
+      unit && item.secondaryUnit && unit === item.secondaryUnit;
+
+    if (receivingInSecondaryUnit && item.conversionFactor > 0) {
+      baseQtyToAdd = rawQty * item.conversionFactor;
+    }
+
     let balance = await StockBalance.findOne({
+      companyId,
       itemId,
       locationId,
       zoneName: "Default",
@@ -138,26 +182,32 @@ exports.addStock = async (req, res, next) => {
     });
 
     if (balance) {
-      balance.quantity += Number(quantityToAdd);
+      balance.quantity += baseQtyToAdd;
       await balance.save();
     } else {
       balance = await StockBalance.create({
+        companyId,
         itemId,
         locationId,
-        quantity: Number(quantityToAdd),
+        quantity: baseQtyToAdd,
       });
     }
 
     await Transaction.create({
+      companyId,
       itemId,
       type: "addition",
       destinationLocationId: locationId,
-      quantityChanged: quantityToAdd,
+      quantityChanged: baseQtyToAdd,
       newStockLevel: balance.quantity,
       performedBy: req.user._id,
     });
 
-    res.status(200).json({ message: "Stock added successfully", balance });
+    res.status(200).json({
+      message: "Stock added successfully",
+      baseUnitsAdded: baseQtyToAdd,
+      balance,
+    });
   } catch (error) {
     next(error);
   }
@@ -169,6 +219,7 @@ exports.issueStock = async (req, res, next) => {
   try {
     const { locationId, quantityToIssue } = req.body;
     const itemId = req.params.id;
+    const companyId = req.companyId;
     const issueQty = Number(quantityToIssue);
 
     if (!locationId || !issueQty || issueQty <= 0) {
@@ -178,6 +229,7 @@ exports.issueStock = async (req, res, next) => {
     }
 
     const balance = await StockBalance.findOne({
+      companyId,
       itemId,
       locationId,
       zoneName: "Default",
@@ -195,6 +247,7 @@ exports.issueStock = async (req, res, next) => {
     await balance.save();
 
     await Transaction.create({
+      companyId,
       itemId,
       type: "deduction",
       sourceLocationId: locationId,
@@ -209,12 +262,13 @@ exports.issueStock = async (req, res, next) => {
   }
 };
 
-// @desc    Transfer stock
+// @desc    Transfer stock between locations
 // @route   POST /api/inventory/:id/transfer
 exports.transferStock = async (req, res, next) => {
   try {
     const { sourceLocationId, destinationLocationId, quantity } = req.body;
     const itemId = req.params.id;
+    const companyId = req.companyId;
     const transferQty = Number(quantity);
 
     if (!sourceLocationId || !destinationLocationId || transferQty <= 0) {
@@ -228,6 +282,7 @@ exports.transferStock = async (req, res, next) => {
     }
 
     const sourceBalance = await StockBalance.findOne({
+      companyId,
       itemId,
       locationId: sourceLocationId,
       zoneName: "Default",
@@ -244,6 +299,7 @@ exports.transferStock = async (req, res, next) => {
     await sourceBalance.save();
 
     let destBalance = await StockBalance.findOne({
+      companyId,
       itemId,
       locationId: destinationLocationId,
       zoneName: "Default",
@@ -255,6 +311,7 @@ exports.transferStock = async (req, res, next) => {
       await destBalance.save();
     } else {
       destBalance = await StockBalance.create({
+        companyId,
         itemId,
         locationId: destinationLocationId,
         quantity: transferQty,
@@ -262,11 +319,13 @@ exports.transferStock = async (req, res, next) => {
     }
 
     await Transaction.create({
+      companyId,
       itemId,
       type: "transfer",
       sourceLocationId,
       destinationLocationId,
       quantityChanged: transferQty,
+      newStockLevel: destBalance.quantity,
       performedBy: req.user._id,
     });
 
@@ -276,13 +335,13 @@ exports.transferStock = async (req, res, next) => {
   }
 };
 
-// ── NEW: ADJUSTMENT WORKFLOW (PRD-INV-020 to 024) ──
+// ── ADJUSTMENT WORKFLOW (PRD-INV-020 to 024) ──
 
-// @desc    Get all adjustments (for Dashboard PRD-INV-002)
+// @desc    Get all adjustments
 // @route   GET /api/inventory/adjustments
 exports.getAdjustments = async (req, res, next) => {
   try {
-    const adjustments = await Adjustment.find()
+    const adjustments = await Adjustment.find({ companyId: req.companyId })
       .populate("itemId", "name sku")
       .populate("locationId", "name")
       .populate("requestedBy", "name")
@@ -311,6 +370,7 @@ exports.createAdjustment = async (req, res, next) => {
     const status = submitForReview ? "pending" : "draft";
 
     const adjustment = await Adjustment.create({
+      companyId: req.companyId,
       itemId,
       locationId,
       quantityChange,
@@ -327,12 +387,13 @@ exports.createAdjustment = async (req, res, next) => {
   }
 };
 
-// @desc    Review (Approve/Reject) an adjustment (Executes stock change PRD-INV-024)
+// @desc    Review (Approve/Reject) an adjustment (PRD-INV-024)
 // @route   PATCH /api/inventory/adjustments/:id/review
 exports.reviewAdjustment = async (req, res, next) => {
   try {
-    const { action, reviewNotes } = req.body; // action must be 'approve' or 'reject'
+    const { action, reviewNotes } = req.body;
     const adjustmentId = req.params.id;
+    const companyId = req.companyId;
 
     if (!["approve", "reject"].includes(action)) {
       return res
@@ -340,8 +401,10 @@ exports.reviewAdjustment = async (req, res, next) => {
         .json({ message: "Action must be 'approve' or 'reject'" });
     }
 
-    const adjustment = await Adjustment.findById(adjustmentId);
-
+    const adjustment = await Adjustment.findOne({
+      _id: adjustmentId,
+      companyId,
+    });
     if (!adjustment) {
       return res.status(404).json({ message: "Adjustment not found" });
     }
@@ -363,10 +426,10 @@ exports.reviewAdjustment = async (req, res, next) => {
         .json({ message: "Adjustment rejected", adjustment });
     }
 
-    // PRD-INV-024: Action is approve, execute stock level modification
     adjustment.status = "approved";
 
     let balance = await StockBalance.findOne({
+      companyId,
       itemId: adjustment.itemId,
       locationId: adjustment.locationId,
       zoneName: "Default",
@@ -380,17 +443,16 @@ exports.reviewAdjustment = async (req, res, next) => {
           .json({ message: "Cannot approve: Insufficient stock to deduct." });
       }
       balance = await StockBalance.create({
+        companyId,
         itemId: adjustment.itemId,
         locationId: adjustment.locationId,
         quantity: adjustment.quantityChange,
       });
     } else {
       if (balance.quantity + adjustment.quantityChange < 0) {
-        return res
-          .status(400)
-          .json({
-            message: "Cannot approve: Insufficient stock for this deduction.",
-          });
+        return res.status(400).json({
+          message: "Cannot approve: Insufficient stock for this deduction.",
+        });
       }
       balance.quantity += adjustment.quantityChange;
       await balance.save();
@@ -398,8 +460,8 @@ exports.reviewAdjustment = async (req, res, next) => {
 
     await adjustment.save();
 
-    // Create tracking Transaction for the audit ledger
     await Transaction.create({
+      companyId,
       itemId: adjustment.itemId,
       type: "adjustment",
       destinationLocationId: adjustment.locationId,
@@ -408,13 +470,76 @@ exports.reviewAdjustment = async (req, res, next) => {
       performedBy: req.user._id,
     });
 
-    res
-      .status(200)
-      .json({
-        message: "Adjustment approved and stock updated",
-        adjustment,
-        balance,
-      });
+    res.status(200).json({
+      message: "Adjustment approved and stock updated",
+      adjustment,
+      balance,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get items at or below minimum stock level
+// @route   GET /api/inventory/low-stock
+exports.getLowStockItems = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const items = await Item.find({ companyId, isArchived: false }).lean();
+    const balances = await StockBalance.find({ companyId }).lean();
+
+    const lowStockItems = items
+      .map((item) => {
+        const itemBalances = balances.filter(
+          (b) => b.itemId.toString() === item._id.toString(),
+        );
+        const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
+        return { ...item, currentStock: totalStock };
+      })
+      .filter((item) => item.currentStock < item.minStockLevel);
+
+    res.status(200).json({
+      success: true,
+      count: lowStockItems.length,
+      data: lowStockItems,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Upload or replace an item's image (PRD-INV-005/006)
+// @route   POST /api/inventory/:id/image
+// @access  Admin, Manager
+exports.uploadItemImage = async (req, res, next) => {
+  try {
+    // multer has already processed the file and put it on req.file.
+    // If multer rejected it (wrong type, too large), it called next(error) already.
+    if (!req.file) {
+      return res.status(400).json({ message: "No image file provided." });
+    }
+
+    const item = await Item.findOne({
+      _id: req.params.id,
+      companyId: req.companyId,
+    });
+
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    // Build a publicly accessible URL path.
+    // The /uploads static directory is served by app.js (see route registration).
+    // In production swap this for your CDN or S3 presigned URL.
+    const imageUrl = `/uploads/${req.file.filename}`;
+    item.imageUrl = imageUrl;
+    await item.save();
+
+    res.status(200).json({
+      message: "Image uploaded successfully",
+      imageUrl,
+      item,
+    });
   } catch (error) {
     next(error);
   }

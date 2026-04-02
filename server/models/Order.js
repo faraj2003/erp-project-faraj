@@ -1,22 +1,26 @@
-// models/Order.js
+// server/models/Order.js
 const mongoose = require("mongoose");
 
 const orderSchema = new mongoose.Schema(
   {
-    orderNumber: { type: String, required: true, unique: true, index: true },
+    // PRD-INV-037: Scope every order to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
+    orderNumber: { type: String, required: true, index: true },
     managerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-
-    // ── NEW: Which Shop is executing this order? ──
     locationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
       required: true,
     },
-
     status: {
       type: String,
       enum: ["Pending", "In Progress", "Completed", "Cancelled"],
@@ -39,7 +43,6 @@ const orderSchema = new mongoose.Schema(
       totalMaterialCost: { type: Number, default: 0 },
       totalProductionValue: { type: Number, default: 0 },
     },
-
     inputs: [
       {
         itemId: {
@@ -47,12 +50,9 @@ const orderSchema = new mongoose.Schema(
           ref: "Item",
           required: true,
         },
-        quantityRequired: { type: Number, required: true, min: 0.01 }, // The estimate
-
-        // ── NEW: Actuals & Scrap Tracking ──
-        quantityUtilized: { type: Number, default: 0 }, // What went into the final product
-        quantityScrapped: { type: Number, default: 0 }, // What was wasted/damaged
-
+        quantityRequired: { type: Number, required: true, min: 0.01 },
+        quantityUtilized: { type: Number, default: 0 },
+        quantityScrapped: { type: Number, default: 0 },
         unitCost: { type: Number, default: 0 },
       },
     ],
@@ -70,6 +70,9 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+// Order numbers must be unique per company, not globally
+orderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true });
 
 orderSchema.pre("save", function (next) {
   if (this.isNew && this.statusHistory.length === 0) {

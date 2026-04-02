@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 const {
   getItems,
   createItem,
@@ -11,9 +12,11 @@ const {
   addStock,
   issueStock,
   transferStock,
-  getAdjustments, // NEW
-  createAdjustment, // NEW
-  reviewAdjustment, // NEW
+  getLowStockItems,
+  getAdjustments,
+  createAdjustment,
+  reviewAdjustment,
+  uploadItemImage,
 } = require("../controllers/inventoryController");
 
 router.use(protect);
@@ -24,7 +27,12 @@ router
   .get(getItems)
   .post(authorize("admin", "manager", "procurement_manager"), createItem);
 
-// ── NEW: Adjustment Workflow Routes (MUST BE ABOVE /:id ROUTES) ──
+// ── IMPORTANT: All named sub-routes MUST be registered before /:id ──
+
+// Low-stock alert route (PRD-INV-001)
+router.get("/low-stock", getLowStockItems);
+
+// Adjustment Workflow Routes (PRD-INV-020 to 024)
 router
   .route("/adjustments")
   .get(authorize("admin", "manager"), getAdjustments)
@@ -33,11 +41,7 @@ router
     createAdjustment,
   );
 
-router.patch(
-  "/adjustments/:id/review",
-  authorize("admin"), // Only Admin/Inventory Controller can approve
-  reviewAdjustment,
-);
+router.patch("/adjustments/:id/review", authorize("admin"), reviewAdjustment);
 
 // --- Item Management Routes ---
 router
@@ -46,6 +50,16 @@ router
   .delete(authorize("admin"), deleteItem);
 
 router.patch("/:id/archive", authorize("admin", "manager"), archiveItem);
+
+// PRD-INV-005/006: Multimedia asset upload for an item
+// upload.single("image") runs multer before the controller.
+// The field name "image" must match what the frontend sends in FormData.
+router.post(
+  "/:id/image",
+  authorize("admin", "manager"),
+  upload.single("image"),
+  uploadItemImage,
+);
 
 // --- Stock Movement Routes ---
 router.post(
