@@ -21,22 +21,18 @@ const getMultiplier = (item, requestedUnit) => {
   return secUnit ? secUnit.multiplierToBase : null;
 };
 
-// ── NEW FEATURE (PRD-INV-001 & 002): Dashboard Metrics ──
-
-// @desc    Get aggregated dashboard metrics (Valuation, Low Stock, Recent Movements)
+// @desc    Get aggregated dashboard metrics
 // @route   GET /api/inventory/dashboard
 exports.getDashboardMetrics = async (req, res, next) => {
   try {
     const companyId = req.companyId;
 
-    // 1. Fetch active items and stock balances
     const items = await Item.find({ companyId, isArchived: false }).lean();
     const balances = await StockBalance.find({ companyId }).lean();
 
     let totalValuation = 0;
     let lowStockCount = 0;
 
-    // Calculate valuation and low stock count
     items.forEach((item) => {
       const itemBalances = balances.filter(
         (b) => b.itemId.toString() === item._id.toString(),
@@ -46,7 +42,6 @@ exports.getDashboardMetrics = async (req, res, next) => {
         0,
       );
 
-      // Total Valuation = (Total Base Stock) * (Value Per Base Unit)
       totalValuation += totalStockBase * (item.valuePerUnit || 0);
 
       if (totalStockBase < item.minStockLevel) {
@@ -54,7 +49,6 @@ exports.getDashboardMetrics = async (req, res, next) => {
       }
     });
 
-    // 2. Fetch pending adjustments (PRD-INV-002)
     const pendingAdjustments = await Adjustment.find({
       companyId,
       status: "pending",
@@ -65,14 +59,13 @@ exports.getDashboardMetrics = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // 3. Fetch chronological stock movements (PRD-INV-002)
     const recentTransactions = await Transaction.find({ companyId })
       .populate("itemId", "name sku")
       .populate("performedBy", "name")
       .populate("sourceLocationId", "name")
       .populate("destinationLocationId", "name")
       .sort({ createdAt: -1 })
-      .limit(10) // Limit to top 10 recent movements for dashboard UI
+      .limit(10)
       .lean();
 
     res.status(200).json({
@@ -113,7 +106,9 @@ exports.getItems = async (req, res, next) => {
       ];
     }
 
-    const items = await Item.find(query).lean();
+    // NEW FIX: Added populate for categoryId so the UI badges display correctly!
+    const items = await Item.find(query).populate("categoryId", "name").lean();
+
     const balances = await StockBalance.find({ companyId })
       .populate("locationId", "name type")
       .lean();
@@ -201,7 +196,7 @@ exports.archiveItem = async (req, res, next) => {
   }
 };
 
-// @desc    Delete item
+// @desc    Delete item permanently
 // @route   DELETE /api/inventory/:id
 exports.deleteItem = async (req, res, next) => {
   try {
@@ -658,10 +653,8 @@ exports.uploadItemImage = async (req, res, next) => {
   }
 };
 
-// ── EXPORT ENDPOINTS (PRD-INV-040) ──
+// ── EXPORT ENDPOINTS ──
 
-// @desc    Export transactions to CSV
-// @route   GET /api/inventory/export/transactions
 exports.exportTransactionsCSV = async (req, res, next) => {
   try {
     const companyId = req.companyId;
@@ -705,12 +698,9 @@ exports.exportTransactionsCSV = async (req, res, next) => {
   }
 };
 
-// @desc    Export item master and valuations to CSV
-// @route   GET /api/inventory/export/items
 exports.exportItemsCSV = async (req, res, next) => {
   try {
     const companyId = req.companyId;
-    // Populate Category if you eventually implement the Category schema
     const items = await Item.find({ companyId, isArchived: false })
       .populate("categoryId", "name")
       .lean();
@@ -750,8 +740,6 @@ exports.exportItemsCSV = async (req, res, next) => {
   }
 };
 
-// @desc    Export adjustments to CSV
-// @route   GET /api/inventory/export/adjustments
 exports.exportAdjustmentsCSV = async (req, res, next) => {
   try {
     const companyId = req.companyId;
