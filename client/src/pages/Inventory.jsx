@@ -21,7 +21,6 @@ export default function Inventory() {
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
   const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
-  // Updated for hierarchical units
   const [addItemForm, setAddItemForm] = useState({
     sku: '', name: '', type: 'raw_material', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: ''
   });
@@ -30,7 +29,7 @@ export default function Inventory() {
     queryKey: ['inventory'],
     queryFn: async () => {
       const { data } = await axios.get('/api/inventory');
-      return data.data; // Adjusted to extract 'data' array from the standardized response
+      return data.data; 
     },
   });
 
@@ -82,6 +81,24 @@ export default function Inventory() {
     onError: (error) => alert(error.response?.data?.message || "Failed to issue stock.")
   });
 
+  // ── NEW FEATURE: CSV Export ──
+  const handleExportItems = async () => {
+    try {
+      const response = await axios.get('/api/inventory/export/items', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'inventory_catalog_valuation.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert("Failed to export items.");
+      console.error(error);
+    }
+  };
+
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
     const payload = { 
@@ -129,7 +146,6 @@ export default function Inventory() {
     });
   };
 
-  // Helper for rendering available units in dropdowns
   const renderUnitOptions = (item) => {
     const options = [<option key="base" value={item.baseUnit}>{item.baseUnit} (Base)</option>];
     if (item.secondaryUnits) {
@@ -146,11 +162,18 @@ export default function Inventory() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
-        {canCreateItem && (
-          <button onClick={() => setIsAddItemModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors">
-            + Add New Product
-          </button>
-        )}
+        <div className="flex gap-3">
+          {canCreateItem && (
+            <button onClick={handleExportItems} className="bg-gray-100 text-gray-800 border border-gray-300 px-4 py-2 rounded hover:bg-gray-200 font-medium shadow-sm transition-colors">
+              📥 Export Catalog
+            </button>
+          )}
+          {canCreateItem && (
+            <button onClick={() => setIsAddItemModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors">
+              + Add New Product
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
@@ -168,7 +191,6 @@ export default function Inventory() {
                 <p className={`text-2xl font-bold ${item.currentStock <= item.minStockLevel ? 'text-red-600' : 'text-green-600'}`}>
                   {item.currentStock} {item.baseUnit}
                 </p>
-                {/* Dynamically render all secondary unit equivalents */}
                 {item.stockEquivalents && Object.entries(item.stockEquivalents).map(([uName, uVal]) => (
                   <p key={uName} className="text-sm text-gray-500 font-medium mt-1">
                     ≈ {uVal} {uName}

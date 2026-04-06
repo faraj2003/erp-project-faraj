@@ -258,11 +258,9 @@ exports.addStock = async (req, res, next) => {
 
     const multiplier = getMultiplier(item, unit);
     if (!multiplier) {
-      return res
-        .status(400)
-        .json({
-          message: `Invalid unit specified: ${unit}. Not found in item configuration.`,
-        });
+      return res.status(400).json({
+        message: `Invalid unit specified: ${unit}. Not found in item configuration.`,
+      });
     }
 
     const baseQtyToAdd = rawQty * multiplier;
@@ -329,11 +327,9 @@ exports.issueStock = async (req, res, next) => {
 
     const multiplier = getMultiplier(item, unit);
     if (!multiplier) {
-      return res
-        .status(400)
-        .json({
-          message: `Invalid unit specified: ${unit}. Not found in item configuration.`,
-        });
+      return res.status(400).json({
+        message: `Invalid unit specified: ${unit}. Not found in item configuration.`,
+      });
     }
 
     const baseQtyToIssue = rawQty * multiplier;
@@ -573,11 +569,9 @@ exports.reviewAdjustment = async (req, res, next) => {
       });
     } else {
       if (balance.quantity + adjustment.quantityChange < 0) {
-        return res
-          .status(400)
-          .json({
-            message: "Cannot approve: Insufficient stock for this deduction.",
-          });
+        return res.status(400).json({
+          message: "Cannot approve: Insufficient stock for this deduction.",
+        });
       }
       balance.quantity += adjustment.quantityChange;
       await balance.save();
@@ -595,13 +589,11 @@ exports.reviewAdjustment = async (req, res, next) => {
       performedBy: req.user._id,
     });
 
-    res
-      .status(200)
-      .json({
-        message: "Adjustment approved and stock updated",
-        adjustment,
-        balance,
-      });
+    res.status(200).json({
+      message: "Adjustment approved and stock updated",
+      adjustment,
+      balance,
+    });
   } catch (error) {
     next(error);
   }
@@ -666,6 +658,8 @@ exports.uploadItemImage = async (req, res, next) => {
   }
 };
 
+// ── EXPORT ENDPOINTS (PRD-INV-040) ──
+
 // @desc    Export transactions to CSV
 // @route   GET /api/inventory/export/transactions
 exports.exportTransactionsCSV = async (req, res, next) => {
@@ -696,7 +690,7 @@ exports.exportTransactionsCSV = async (req, res, next) => {
       const dest = txn.destinationLocationId?.name || "";
       const user = txn.performedBy?.name || "";
 
-      csv += `${txn.transactionId},${date},${txn.type},${escape(sku)},${escape(itemName)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(source)},${escape(dest)},${escape(user)}\n`;
+      csv += `${txn.transactionId || txn._id},${date},${txn.type},${escape(sku)},${escape(itemName)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(source)},${escape(dest)},${escape(user)}\n`;
     });
 
     res.setHeader("Content-Type", "text/csv");
@@ -705,6 +699,95 @@ exports.exportTransactionsCSV = async (req, res, next) => {
       'attachment; filename="inventory-transactions.csv"',
     );
 
+    res.status(200).send(csv);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Export item master and valuations to CSV
+// @route   GET /api/inventory/export/items
+exports.exportItemsCSV = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    // Populate Category if you eventually implement the Category schema
+    const items = await Item.find({ companyId, isArchived: false })
+      .populate("categoryId", "name")
+      .lean();
+    const balances = await StockBalance.find({ companyId })
+      .populate("locationId", "name")
+      .lean();
+
+    let csv =
+      "SKU,Item Name,Type,Category,Base Unit,Min Stock Level,Cost Per Unit,Value Per Unit,Total Base Stock,Total Valuation\n";
+
+    const escape = (str) => {
+      if (str === null || str === undefined) return "";
+      return `"${String(str).replace(/"/g, '""')}"`;
+    };
+
+    items.forEach((item) => {
+      const itemBalances = balances.filter(
+        (b) => b.itemId.toString() === item._id.toString(),
+      );
+      const totalStockBase = itemBalances.reduce(
+        (sum, b) => sum + b.quantity,
+        0,
+      );
+      const totalValuation = totalStockBase * (item.valuePerUnit || 0);
+
+      csv += `${escape(item.sku)},${escape(item.name)},${item.type},${escape(item.categoryId?.name || "")},${escape(item.baseUnit)},${item.minStockLevel},${item.costPerUnit || 0},${item.valuePerUnit || 0},${totalStockBase},${totalValuation}\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="inventory-items.csv"',
+    );
+    res.status(200).send(csv);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Export adjustments to CSV
+// @route   GET /api/inventory/export/adjustments
+exports.exportAdjustmentsCSV = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const adjustments = await Adjustment.find({ companyId })
+      .populate("itemId", "sku name baseUnit")
+      .populate("locationId", "name")
+      .populate("requestedBy", "name")
+      .populate("reviewedBy", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    let csv =
+      "Date,SKU,Item Name,Location,Quantity Change,Base Unit,Reason,Status,Requested By,Reviewed By,Review Notes\n";
+
+    const escape = (str) => {
+      if (str === null || str === undefined) return "";
+      return `"${String(str).replace(/"/g, '""')}"`;
+    };
+
+    adjustments.forEach((adj) => {
+      const date = adj.createdAt ? new Date(adj.createdAt).toISOString() : "";
+      const sku = adj.itemId?.sku || "";
+      const itemName = adj.itemId?.name || "";
+      const baseUnit = adj.itemId?.baseUnit || "";
+      const location = adj.locationId?.name || "";
+      const requestedBy = adj.requestedBy?.name || "";
+      const reviewedBy = adj.reviewedBy?.name || "";
+
+      csv += `${date},${escape(sku)},${escape(itemName)},${escape(location)},${adj.quantityChange},${escape(baseUnit)},${escape(adj.reason)},${adj.status},${escape(requestedBy)},${escape(reviewedBy)},${escape(adj.reviewNotes)}\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="inventory-adjustments.csv"',
+    );
     res.status(200).send(csv);
   } catch (error) {
     next(error);

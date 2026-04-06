@@ -36,7 +36,7 @@ export default function Adjustments() {
     queryKey: ['inventory'],
     queryFn: async () => {
       const { data } = await axios.get('/api/inventory');
-      return data;
+      return data.data || data; // Handle array vs paginated response
     },
   });
 
@@ -63,12 +63,30 @@ export default function Adjustments() {
     mutationFn: async ({ id, payload }) => axios.patch(`/api/inventory/adjustments/${id}/review`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adjustments'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory'] }); // Update global stock view
+      queryClient.invalidateQueries({ queryKey: ['inventory'] }); 
       setReviewingAdjustment(null);
       setReviewNotes('');
     },
     onError: (error) => alert(error.response?.data?.message || "Review failed")
   });
+
+  // ── NEW FEATURE: CSV Export ──
+  const handleExportAdjustments = async () => {
+    try {
+      const response = await axios.get('/api/inventory/export/adjustments', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'inventory_adjustments.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert("Failed to export adjustments.");
+      console.error(error);
+    }
+  };
 
   // Handlers
   const handleCreateSubmit = (e, submitForReview) => {
@@ -113,17 +131,26 @@ export default function Adjustments() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Inventory Adjustments</h1>
           <p className="text-sm text-gray-500 mt-1">Reconcile physical stock discrepancies</p>
         </div>
-        {canCreate && (
-          <button 
-            onClick={() => setIsCreateModalOpen(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium shadow-sm transition-colors"
-          >
-            + Request Adjustment
-          </button>
-        )}
+        <div className="flex gap-3">
+          {isAdmin && (
+             <button 
+               onClick={handleExportAdjustments}
+               className="bg-gray-100 text-gray-800 border border-gray-300 px-4 py-2 rounded hover:bg-gray-200 font-medium shadow-sm transition-colors"
+             >
+               📥 Export Adjustments
+             </button>
+          )}
+          {canCreate && (
+            <button 
+              onClick={() => setIsCreateModalOpen(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium shadow-sm transition-colors"
+            >
+              + Request Adjustment
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Adjustments Ledger Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">

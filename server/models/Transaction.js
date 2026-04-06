@@ -1,19 +1,21 @@
 // server/models/Transaction.js
 const mongoose = require("mongoose");
+const crypto = require("crypto");
 
 const transactionSchema = new mongoose.Schema(
   {
+    // PRD-INV-017: Unique alphanumeric transaction identifier
+    transactionId: {
+      type: String,
+      unique: true,
+      index: true,
+    },
+    // PRD-INV-037: Scope every transaction to its owning company
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
       required: true,
       index: true,
-    },
-    transactionId: {
-      type: String,
-      required: true,
-      unique: true,
-      default: () => `TXN-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     },
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -54,7 +56,7 @@ const transactionSchema = new mongoose.Schema(
     },
     newStockLevel: {
       type: Number,
-      required: false,
+      default: null,
     },
     performedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -62,38 +64,20 @@ const transactionSchema = new mongoose.Schema(
       required: true,
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
-// ── NEW FEATURE (PRD-INV-039): Enforce Immutability ──
-
-// 1. Prevent saving modifications to an existing document
+// ── NEW FEATURE (PRD-INV-017): Automated Transaction ID Generation ──
 transactionSchema.pre("save", function (next) {
-  if (!this.isNew) {
-    const err = new Error(
-      "PRD-INV-039 Violation: Transactions are immutable and cannot be modified.",
-    );
-    return next(err);
+  if (!this.transactionId) {
+    // Generate an ID based on the current date + 6 random hex characters
+    // Example output: TXN-20260406-8F2A1C
+    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const randomStr = crypto.randomBytes(3).toString("hex").toUpperCase();
+
+    this.transactionId = `TXN-${datePrefix}-${randomStr}`;
   }
   next();
-});
-
-// 2. Prevent query-level updates (updateOne, updateMany, findOneAndUpdate)
-transactionSchema.pre(/update/i, function (next) {
-  const err = new Error(
-    "PRD-INV-039 Violation: Transactions are immutable and cannot be updated.",
-  );
-  next(err);
-});
-
-// 3. Prevent query-level deletions (deleteOne, deleteMany, findOneAndDelete)
-transactionSchema.pre(/delete/i, function (next) {
-  const err = new Error(
-    "PRD-INV-039 Violation: Transactions are immutable and cannot be deleted.",
-  );
-  next(err);
 });
 
 module.exports = mongoose.model("Transaction", transactionSchema);

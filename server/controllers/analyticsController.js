@@ -1,261 +1,82 @@
 // server/controllers/analyticsController.js
 const Transaction = require("../models/Transaction");
 const Item = require("../models/Item");
-const StockBalance = require("../models/StockBalance");
-const Adjustment = require("../models/Adjustment");
+const AppError = require("../utils/AppError");
 
-// @desc    Get total production per item (bar chart data)
-// @route   GET /api/analytics/production
-const getProductionMetrics = async (req, res, next) => {
-  try {
-    const companyId = req.companyId;
-    const metrics = await Transaction.aggregate([
-      { $match: { companyId, type: "addition" } },
-      {
-        $lookup: {
-          from: "items",
-          localField: "itemId",
-          foreignField: "_id",
-          as: "itemDetails",
-        },
-      },
-      { $unwind: "$itemDetails" },
-      {
-        $group: {
-          _id: "$itemDetails.name",
-          totalProduced: { $sum: "$quantityChanged" },
-          lastProductionDate: { $max: "$createdAt" },
-        },
-      },
-      { $sort: { totalProduced: -1 } },
-    ]);
-
-    res.status(200).json({ success: true, data: metrics });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get monthly production volume trend (line chart data)
+// @desc    Get inventory consumption trends and velocity
 // @route   GET /api/analytics/trends
-const getMonthlyTrends = async (req, res, next) => {
+// @access  Private (Admin/Manager)
+exports.getInventoryTrends = async (req, res, next) => {
   try {
     const companyId = req.companyId;
-    const trends = await Transaction.aggregate([
-      { $match: { companyId, type: "addition" } },
-      {
-        $group: {
-          _id: {
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" },
-          },
-          totalProduced: { $sum: "$quantityChanged" },
-          orderCount: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1 } },
-      {
-        $project: {
-          _id: 0,
-          month: {
-            $dateToString: {
-              format: "%b %Y",
-              date: {
-                $dateFromParts: {
-                  year: "$_id.year",
-                  month: "$_id.month",
-                  day: 1,
-                },
-              },
-            },
-          },
-          totalProduced: 1,
-          orderCount: 1,
-        },
-      },
-    ]);
+    const { days = 30 } = req.query; // Default to a 30-day lookback period
 
-    res.status(200).json({ success: true, data: trends });
-  } catch (error) {
-    next(error);
-  }
-};
+    const parsedDays = parseInt(days, 10);
+    if (isNaN(parsedDays) || parsedDays <= 0) {
+      throw new AppError("Days parameter must be a positive number", 400);
+    }
 
-// @desc    Get inventory deduction vs addition summary
-// @route   GET /api/analytics/stock-movement
-const getStockMovement = async (req, res, next) => {
-  try {
-    const companyId = req.companyId;
-    const movement = await Transaction.aggregate([
-      { $match: { companyId } },
-      {
-        $lookup: {
-          from: "items",
-          localField: "itemId",
-          foreignField: "_id",
-          as: "itemDetails",
-        },
-      },
-      { $unwind: "$itemDetails" },
-      {
-        $group: {
-          _id: {
-            name: "$itemDetails.name",
-            type: "$type",
-          },
-          total: { $sum: "$quantityChanged" },
-        },
-      },
-      {
-        $group: {
-          _id: "$_id.name",
-          added: {
-            $sum: { $cond: [{ $eq: ["$_id.type", "addition"] }, "$total", 0] },
-          },
-          deducted: {
-            $sum: { $cond: [{ $eq: ["$_id.type", "deduction"] }, "$total", 0] },
-          },
-        },
-      },
-      { $sort: { added: -1 } },
-    ]);
+    const dateLimit = new Date();
+    dateLimit.setDate(dateLimit.getDate() - parsedDays);
 
-    res.status(200).json({ success: true, data: movement });
-  } catch (error) {
-    next(error);
-  }
-};
+    // PRD-INV-025 to 028: Fetch transactions that indicate consumption/usage
+    const transactions = await Transaction.find({
+      companyId,
+      createdAt: { $gte: dateLimit },
+      type: { $in: ["deduction", "shop_consumption", "scrap_return"] },
+    })
+      .populate("itemId", "name sku baseUnit")
+      .lean();
 
-// @desc    Get top-level dashboard metrics
-// @route   GET /api/analytics/dashboard
-const getDashboardMetrics = async (req, res, next) => {
-  try {
-    const companyId = req.companyId;
-    const items = await Item.find({ companyId, isArchived: false }).lean();
-    const balances = await StockBalance.find({ companyId }).lean();
+    // Calculate consumption velocity per item
+    const velocityMap = {};
 
-    let totalValuation = 0;
-    const lowStockAlerts = [];
+    transactions.forEach((txn) => {
+      // Skip if item was deleted/orphaned
+      if (!txn.itemId) return;
 
-    items.forEach((item) => {
-      const itemBalances = balances.filter(
-        (b) => b.itemId.toString() === item._id.toString(),
-      );
-      const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
+      const itemId = txn.itemId._id.toString();
 
-      totalValuation += totalStock * (item.valuePerUnit || 0);
-
-      if (totalStock <= item.minStockLevel) {
-        lowStockAlerts.push({
-          itemId: item._id,
-          sku: item.sku,
-          name: item.name,
-          currentStock: totalStock,
-          minStockLevel: item.minStockLevel,
-        });
+      if (!velocityMap[itemId]) {
+        velocityMap[itemId] = {
+          item: txn.itemId,
+          totalConsumed: 0,
+          transactionCount: 0,
+        };
       }
+
+      velocityMap[itemId].totalConsumed += txn.quantityChanged;
+      velocityMap[itemId].transactionCount += 1;
     });
 
-    const pendingAdjustments = await Adjustment.find({
-      companyId,
-      status: "pending",
-    })
-      .populate("itemId", "name sku")
-      .populate("locationId", "name")
-      .populate("requestedBy", "name")
-      .lean();
+    // Format the response into a clean array of analytical data
+    const trends = Object.values(velocityMap).map((data) => ({
+      item: {
+        id: data.item._id,
+        name: data.item.name,
+        sku: data.item.sku,
+        baseUnit: data.item.baseUnit,
+      },
+      metrics: {
+        totalConsumed: data.totalConsumed,
+        // Calculate velocity (average used per day)
+        averageDailyConsumption: parseFloat(
+          (data.totalConsumed / parsedDays).toFixed(2),
+        ),
+        transactionCount: data.transactionCount,
+      },
+    }));
+
+    // Sort by highest total consumption to highlight fastest-moving items
+    trends.sort((a, b) => b.metrics.totalConsumed - a.metrics.totalConsumed);
 
     res.status(200).json({
       success: true,
-      data: {
-        totalItemsCount: items.length,
-        totalValuation,
-        lowStockAlerts,
-        pendingAdjustmentsCount: pendingAdjustments.length,
-        pendingAdjustments,
-      },
+      periodDays: parsedDays,
+      analyzedSince: dateLimit.toISOString(),
+      data: trends,
     });
   } catch (error) {
     next(error);
   }
-};
-
-// @desc    Get immutable stock ledger (PRD-INV-039)
-// @route   GET /api/analytics/ledger
-const getStockLedger = async (req, res, next) => {
-  try {
-    const ledger = await Transaction.find({ companyId: req.companyId })
-      .populate("itemId", "name sku")
-      .populate("sourceLocationId", "name")
-      .populate("destinationLocationId", "name")
-      .populate("performedBy", "name email")
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({ success: true, data: ledger });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Export stock ledger to CSV (PRD-INV-040)
-// @route   GET /api/analytics/ledger/export
-const exportStockLedgerCSV = async (req, res, next) => {
-  try {
-    const ledger = await Transaction.find({ companyId: req.companyId })
-      .populate("itemId", "name sku")
-      .populate("sourceLocationId", "name")
-      .populate("destinationLocationId", "name")
-      .populate("performedBy", "name")
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const headers = [
-      "Transaction ID",
-      "Date",
-      "Item SKU",
-      "Item Name",
-      "Transaction Type",
-      "Quantity Changed",
-      "Source Location",
-      "Destination Location",
-      "Performed By",
-    ];
-
-    const rows = ledger.map((t) => [
-      t.transactionId,
-      new Date(t.createdAt).toISOString(),
-      t.itemId?.sku || "N/A",
-      t.itemId?.name || "N/A",
-      t.type.toUpperCase(),
-      t.quantityChanged,
-      t.sourceLocationId?.name || "N/A",
-      t.destinationLocationId?.name || "N/A",
-      t.performedBy?.name || "System",
-    ]);
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
-      ),
-    ].join("\n");
-
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=stock_ledger.csv",
-    );
-    res.status(200).send(csvContent);
-  } catch (error) {
-    next(error);
-  }
-};
-
-module.exports = {
-  getProductionMetrics,
-  getMonthlyTrends,
-  getStockMovement,
-  getDashboardMetrics,
-  getStockLedger,
-  exportStockLedgerCSV,
 };

@@ -4,7 +4,7 @@ const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/upload");
 const {
-  getDashboardMetrics, // <-- New Function Imported
+  getDashboardMetrics,
   getItems,
   createItem,
   updateItem,
@@ -19,6 +19,8 @@ const {
   reviewAdjustment,
   uploadItemImage,
   exportTransactionsCSV,
+  exportItemsCSV, // <-- New
+  exportAdjustmentsCSV, // <-- New
 } = require("../controllers/inventoryController");
 
 router.use(protect);
@@ -37,11 +39,21 @@ router.get("/dashboard", authorize("admin", "manager"), getDashboardMetrics);
 // Low-stock alert route (PRD-INV-001)
 router.get("/low-stock", getLowStockItems);
 
-// Export Routes (PRD-INV-040)
+// Export Routes (PRD-INV-040) - Ensure complete data portability
 router.get(
   "/export/transactions",
   authorize("admin", "manager"),
   exportTransactionsCSV,
+);
+router.get(
+  "/export/items",
+  authorize("admin", "manager", "procurement_manager"),
+  exportItemsCSV,
+);
+router.get(
+  "/export/adjustments",
+  authorize("admin", "manager", "inventory_controller"),
+  exportAdjustmentsCSV,
 );
 
 // Adjustment Workflow Routes (PRD-INV-020 to 024)

@@ -14,9 +14,10 @@ const fetchProductionMetrics = async () => {
   return data.data;
 };
 
+// UPDATED: Now fetches the new /api/analytics/trends endpoint
 const fetchMonthlyTrends = async () => {
   const { data } = await api.get('/api/analytics/trends');
-  return data.data;
+  return data.data; // Now returns velocity & trend data
 };
 
 const fetchStockMovement = async () => {
@@ -29,7 +30,6 @@ const fetchRecentOrders = async () => {
   return data.data;
 };
 
-// NEW: Fetch consolidated dashboard metrics from the new backend endpoint
 const fetchDashboardMetrics = async () => {
   const { data } = await api.get('/api/inventory/dashboard');
   return data.data;
@@ -41,7 +41,6 @@ const formatAxisLabel = (value) => {
   return value.length > 12 ? `${value.substring(0, 12)}...` : value;
 };
 
-// ── Reusable components ──
 const SectionTitle = ({ title, subtitle }) => (
   <div className="mb-4">
     <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">{title}</h3>
@@ -111,7 +110,6 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-// ── Staff Dashboard Component ──
 const StaffDashboard = ({ isSocketLive }) => {
   const { data: recentOrders = [], isLoading, isError } = useQuery({
     queryKey: ['orders', 'recent'],
@@ -161,7 +159,6 @@ const StaffDashboard = ({ isSocketLive }) => {
   );
 };
 
-// ── Main Dashboard ──
 const Dashboard = () => {
   const { isAdmin } = useAuthStore();
   const isSocketLive = useSocketStore((state) => state.isConnected);
@@ -170,27 +167,23 @@ const Dashboard = () => {
   const { data: trends = [], isLoading: loadingTrends, isError: errorTrends } = useQuery({ queryKey: ['analytics', 'trends'], queryFn: fetchMonthlyTrends, enabled: isAdmin() });
   const { data: stockMovement = [], isLoading: loadingMovement, isError: errorMovement } = useQuery({ queryKey: ['analytics', 'stock-movement'], queryFn: fetchStockMovement, enabled: isAdmin() });
   
-  // NEW: Fetch data from our new API route
   const { data: dashboardMetrics = {} } = useQuery({ queryKey: ['inventory', 'dashboard'], queryFn: fetchDashboardMetrics, enabled: isAdmin() });
 
-  const handleDownloadCSV = async () => {
+  // ── NEW FEATURE: Reusable CSV Downloader ──
+  const handleDownloadCSV = async (endpoint, filename) => {
     try {
-      // UPDATED: Points to the new export route
-      const response = await api.get('/api/inventory/export/transactions', {
-        responseType: 'blob', 
-      });
-      
+      const response = await api.get(endpoint, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'inventory_transactions.csv');
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert("Failed to download the Stock Ledger.");
+      alert(`Failed to download ${filename}.`);
       console.error(error);
     }
   };
@@ -199,7 +192,8 @@ const Dashboard = () => {
 
   const totalUnits = production.reduce((sum, p) => sum + p.totalProduced, 0);
   const totalMonths = trends.length;
-  const peakMonth = trends.reduce((max, t) => t.totalProduced > (max?.totalProduced ?? 0) ? t : max, null);
+  // Adjusted logic if the backend trends format changed to metrics object
+  const peakItem = trends.reduce((max, t) => (t.metrics?.totalConsumed || 0) > (max?.metrics?.totalConsumed ?? 0) ? t : max, null);
 
   return (
     <div>
@@ -208,12 +202,12 @@ const Dashboard = () => {
           <h2 className="text-2xl font-extrabold text-gray-800 dark:text-white">Analytics Dashboard</h2>
           <p className="text-sm text-gray-500 mt-0.5">Live production & inventory insights</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button 
-            onClick={handleDownloadCSV}
-            className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-1.5 px-4 rounded shadow-sm transition-colors"
+            onClick={() => handleDownloadCSV('/api/inventory/export/transactions', 'inventory_transactions.csv')}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-semibold py-1.5 px-4 rounded shadow-sm border border-gray-300 transition-colors"
           >
-            📥 Download Ledger (CSV)
+            📥 Export Transactions
           </button>
           <LiveBadge isLive={isSocketLive} />
         </div>
@@ -236,15 +230,14 @@ const Dashboard = () => {
       )}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        {/* NEW: Total Valuation Card added to the grid */}
         <StatCard 
           label="Total Valuation" 
           value={`$${(dashboardMetrics.totalValuation || 0).toFixed(2)}`} 
           color="border-l-emerald-500" 
         />
         <StatCard label="Total Units" value={totalUnits} unit="units" color="border-l-blue-500" />
-        <StatCard label="Active Months" value={totalMonths} color="border-l-indigo-500" />
-        <StatCard label="Peak Month" value={peakMonth?.month ?? '—'} color="border-l-orange-400" />
+        <StatCard label="Highest Velocity Item" value={peakItem?.item?.name ?? '—'} color="border-l-indigo-500" />
+        <StatCard label="Daily Burn Rate" value={peakItem?.metrics?.averageDailyConsumption ?? '—'} unit="/day" color="border-l-orange-400" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-5">
@@ -264,16 +257,16 @@ const Dashboard = () => {
         </ChartCard>
 
         <ChartCard>
-          <SectionTitle title="Monthly Production Trend" subtitle="Volume of units produced each month" />
+          <SectionTitle title="Consumption Velocity (30 Days)" subtitle="Fastest moving materials" />
           {loadingTrends ? <LoadingChart /> : errorTrends ? <ErrorChart /> : trends.length === 0 ? <EmptyChart message="No data yet" /> : (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={trends} margin={{ top: 4, right: 8, left: 0, bottom: 40 }}>
+              <BarChart data={trends} margin={{ top: 4, right: 8, left: 0, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} angle={-30} textAnchor="end" interval={0} tickFormatter={formatAxisLabel} />
+                <XAxis dataKey="item.name" tick={{ fontSize: 11, fill: '#9ca3af' }} angle={-30} textAnchor="end" interval={0} tickFormatter={formatAxisLabel} />
                 <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
                 <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="totalProduced" name="Units" stroke="#8b5cf6" strokeWidth={3} dot={{ fill: '#8b5cf6', r: 4 }} />
-              </LineChart>
+                <Bar dataKey="metrics.totalConsumed" name="Total Consumed" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           )}
         </ChartCard>

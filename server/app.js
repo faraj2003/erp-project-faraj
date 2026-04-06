@@ -1,4 +1,4 @@
-// app.js
+// server/app.js
 require("dotenv").config();
 const path = require("path");
 const express = require("express");
@@ -51,6 +51,9 @@ const createApp = () => {
   app.use("/api/orders", require("./routes/orderRoutes"));
   app.use("/api/analytics", require("./routes/analyticsRoutes"));
   app.use("/api/locations", require("./routes/locationRoutes"));
+
+  // Newly added system routes for Categories and Units
+  app.use("/api/system", require("./routes/systemRoutes"));
 
   app.use(errorHandler);
 

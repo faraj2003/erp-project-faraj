@@ -4,11 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
-import Adjustments from './pages/Adjustments'; // <-- NEW IMPORT
+import Adjustments from './pages/Adjustments';
 import Orders from './pages/Orders';
 import NewOrder from './pages/NewOrder';
 import Users from './pages/Users';
 import Locations from './pages/Locations';
+import Categories from './pages/Categories'; // <-- NEW IMPORT
+import Units from './pages/Units';           // <-- NEW IMPORT
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
 
@@ -36,7 +38,7 @@ function App() {
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
-              <Route path="/adjustments" element={<Adjustments />} /> {/* <-- NEW ROUTE */}
+              <Route path="/adjustments" element={<Adjustments />} />
               <Route path="/orders" element={<Orders />} />
             </Route>
           </Route>
@@ -46,6 +48,9 @@ function App() {
             <Route element={<AppShell />}>
               <Route path="/orders/new" element={<NewOrder />} />
               <Route path="/locations" element={<Locations />} />
+              {/* --- NEW SYSTEM SETTINGS ROUTES --- */}
+              <Route path="/categories" element={<Categories />} />
+              <Route path="/units" element={<Units />} />
             </Route>
           </Route>
 

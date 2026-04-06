@@ -2,27 +2,11 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
-const {
-  getProductionMetrics,
-  getMonthlyTrends,
-  getStockMovement,
-  getDashboardMetrics, // NEW
-  getStockLedger, // NEW
-  exportStockLedgerCSV, // NEW
-} = require("../controllers/analyticsController");
+const { getInventoryTrends } = require("../controllers/analyticsController");
 
 router.use(protect);
-// Admin/Manager level access for all analytical and audit data
-router.use(authorize("admin", "manager"));
 
-// Existing Chart Routes
-router.get("/production", getProductionMetrics);
-router.get("/trends", getMonthlyTrends);
-router.get("/stock-movement", getStockMovement);
-
-// NEW: PRD Reporting & Audit Routes
-router.get("/dashboard", getDashboardMetrics);
-router.get("/ledger", getStockLedger);
-router.get("/ledger/export", exportStockLedgerCSV);
+// PRD-INV-025 to 028: API endpoints for external systems and trend analysis
+router.get("/trends", authorize("admin", "manager"), getInventoryTrends);
 
 module.exports = router;
