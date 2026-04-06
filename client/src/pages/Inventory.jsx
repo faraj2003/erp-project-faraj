@@ -21,9 +21,12 @@ export default function Inventory() {
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
   const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
+  // UPDATED: Added categoryId to the form state
   const [addItemForm, setAddItemForm] = useState({
-    sku: '', name: '', type: 'raw_material', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: ''
+    sku: '', name: '', type: 'raw_material', categoryId: '', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: ''
   });
+
+  // ── QUERIES ──
 
   const { data: items, isLoading: itemsLoading } = useQuery({
     queryKey: ['inventory'],
@@ -41,12 +44,32 @@ export default function Inventory() {
     },
   });
 
+  // NEW: Fetch Multi-level Categories
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: async () => {
+      const { data } = await axios.get('/api/system/categories');
+      return data.data;
+    },
+  });
+
+  // NEW: Fetch System Units
+  const { data: units = [] } = useQuery({
+    queryKey: ['units'],
+    queryFn: async () => {
+      const { data } = await axios.get('/api/system/units');
+      return data.data;
+    },
+  });
+
+  // ── MUTATIONS ──
+
   const addItemMutation = useMutation({
     mutationFn: async (payload) => axios.post('/api/inventory', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setIsAddItemModalOpen(false);
-      setAddItemForm({ sku: '', name: '', type: 'raw_material', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: '' });
+      setAddItemForm({ sku: '', name: '', type: 'raw_material', categoryId: '', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: '' });
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to add new product.")
   });
@@ -81,7 +104,8 @@ export default function Inventory() {
     onError: (error) => alert(error.response?.data?.message || "Failed to issue stock.")
   });
 
-  // ── NEW FEATURE: CSV Export ──
+  // ── HANDLERS ──
+
   const handleExportItems = async () => {
     try {
       const response = await axios.get('/api/inventory/export/items', { responseType: 'blob' });
@@ -101,10 +125,12 @@ export default function Inventory() {
 
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
+    // UPDATED: Now submits the selected categoryId
     const payload = { 
       sku: addItemForm.sku,
       name: addItemForm.name,
       type: addItemForm.type,
+      categoryId: addItemForm.categoryId || null,
       minStockLevel: Number(addItemForm.minStockLevel),
       baseUnit: addItemForm.baseUnit,
       secondaryUnits: []
@@ -182,9 +208,17 @@ export default function Inventory() {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-800">{item.name} <span className="text-sm font-normal text-gray-500">({item.sku})</span></h2>
-                <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mt-1 capitalize">
-                  {item.type.replace('_', ' ')}
-                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded capitalize">
+                    {item.type.replace('_', ' ')}
+                  </span>
+                  {/* Safely display the populated Category name if it exists */}
+                  {item.categoryId && item.categoryId.name && (
+                     <span className="inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
+                       {item.categoryId.name}
+                     </span>
+                  )}
+                </div>
               </div>
               <div className="text-right">
                 <p className="text-sm text-gray-500 uppercase tracking-wide">Total Global Stock</p>
@@ -263,22 +297,45 @@ export default function Inventory() {
                     <option value="finished_good">Finished Good</option>
                   </select>
                 </div>
+                {/* UPDATED: Dynamically fetched Categories Dropdown */}
                 <div>
-                  <label className="block text-sm font-medium mb-1">Minimum Stock Level (Base Units) *</label>
-                  <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.minStockLevel} onChange={(e) => setAddItemForm({ ...addItemForm, minStockLevel: e.target.value })} required />
+                  <label className="block text-sm font-medium mb-1">Category</label>
+                  <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
+                    <option value="">-- No Category --</option>
+                    {categories.map(c => (
+                      <option key={c._id} value={c._id}>
+                        {c.parentId ? `↳ ${c.name}` : c.name} 
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Minimum Stock Level (Base Units) *</label>
+                <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.minStockLevel} onChange={(e) => setAddItemForm({ ...addItemForm, minStockLevel: e.target.value })} required />
               </div>
 
               <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-6 mt-2">
                 <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Measurement Units</h3>
+                
+                {/* UPDATED: Dynamically fetched System Units Dropdown for Base Unit */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium mb-1">Base Unit (e.g. unit, kg, liter) *</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2 lowercase" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value.toLowerCase() })} placeholder="e.g. piece" required />
+                  <label className="block text-sm font-medium mb-1">Base Unit *</label>
+                  <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value })} required>
+                    <option value="">-- Select Base Unit --</option>
+                    {units.map(u => <option key={u._id} value={u.name}>{u.name} ({u.abbreviation})</option>)}
+                  </select>
                 </div>
+
                 <div className="grid grid-cols-2 gap-4">
+                  {/* UPDATED: Dynamically fetched System Units Dropdown for Secondary Unit */}
                   <div>
-                    <label className="block text-sm font-medium mb-1">Secondary Unit (e.g. Box, Pallet)</label>
-                    <input type="text" className="w-full border border-gray-300 rounded p-2 lowercase" value={addItemForm.secUnitName} onChange={(e) => setAddItemForm({ ...addItemForm, secUnitName: e.target.value.toLowerCase() })} placeholder="e.g. box" />
+                    <label className="block text-sm font-medium mb-1">Secondary Unit</label>
+                    <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.secUnitName} onChange={(e) => setAddItemForm({ ...addItemForm, secUnitName: e.target.value })}>
+                      <option value="">-- None --</option>
+                      {units.map(u => <option key={u._id} value={u.name}>{u.name} ({u.abbreviation})</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Multiplier to Base Unit</label>
@@ -286,6 +343,7 @@ export default function Inventory() {
                   </div>
                 </div>
               </div>
+              
               <div className="flex justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                 <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Create Product</button>
