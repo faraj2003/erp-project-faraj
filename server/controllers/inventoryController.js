@@ -44,7 +44,8 @@ exports.getDashboardMetrics = async (req, res, next) => {
 
       totalValuation += totalStockBase * (item.valuePerUnit || 0);
 
-      if (totalStockBase < item.minStockLevel) {
+      // Using the new Red alert level for low stock count
+      if (totalStockBase <= (item.alertLevels?.red || 0)) {
         lowStockCount++;
       }
     });
@@ -106,7 +107,6 @@ exports.getItems = async (req, res, next) => {
       ];
     }
 
-    // NEW FIX: Added populate for categoryId so the UI badges display correctly!
     const items = await Item.find(query).populate("categoryId", "name").lean();
 
     const balances = await StockBalance.find({ companyId })
@@ -610,7 +610,7 @@ exports.getLowStockItems = async (req, res, next) => {
         const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
         return { ...item, currentStock: totalStock };
       })
-      .filter((item) => item.currentStock < item.minStockLevel);
+      .filter((item) => item.currentStock <= (item.alertLevels?.red || 0));
 
     res.status(200).json({
       success: true,
@@ -709,7 +709,7 @@ exports.exportItemsCSV = async (req, res, next) => {
       .lean();
 
     let csv =
-      "SKU,Item Name,Type,Category,Base Unit,Min Stock Level,Cost Per Unit,Value Per Unit,Total Base Stock,Total Valuation\n";
+      "SKU,Product Brand/Company,Item Name,Type,Category,Base Unit,Dimensions,Shelf Life,Alert(Orange),Alert(Red),Cost Per Unit,Total Base Stock,Total Valuation,Supplier Name\n";
 
     const escape = (str) => {
       if (str === null || str === undefined) return "";
@@ -726,7 +726,7 @@ exports.exportItemsCSV = async (req, res, next) => {
       );
       const totalValuation = totalStockBase * (item.valuePerUnit || 0);
 
-      csv += `${escape(item.sku)},${escape(item.name)},${item.type},${escape(item.categoryId?.name || "")},${escape(item.baseUnit)},${item.minStockLevel},${item.costPerUnit || 0},${item.valuePerUnit || 0},${totalStockBase},${totalValuation}\n`;
+      csv += `${escape(item.sku)},${escape(item.productCompanyName)},${escape(item.name)},${item.type},${escape(item.categoryId?.name || "")},${escape(item.baseUnit)},${escape(item.dimensions)},${escape(item.shelfLife)},${item.alertLevels?.orange || 0},${item.alertLevels?.red || 0},${item.costPerUnit || 0},${totalStockBase},${totalValuation},${escape(item.supplier?.name)}\n`;
     });
 
     res.setHeader("Content-Type", "text/csv");

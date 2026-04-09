@@ -20,7 +20,7 @@ const unitSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    // PRD-INV-013: Flag to indicate if this is a system-protected unit (e.g., kg, liters, pieces)
+    // PRD-INV-013: Flag to indicate if this is a system-protected unit
     isCore: {
       type: Boolean,
       default: false,
@@ -33,20 +33,17 @@ const unitSchema = new mongoose.Schema(
 unitSchema.index({ companyId: 1, name: 1 }, { unique: true });
 
 // PRD-INV-013: Middleware to PREVENT DELETION of core units
-unitSchema.pre("findOneAndDelete", async function (next) {
+unitSchema.pre("findOneAndDelete", async function () {
   const doc = await this.model.findOne(this.getQuery());
   if (doc && doc.isCore) {
-    return next(
-      new Error(
-        "PRD-INV-013 Violation: Cannot delete a core system measurement unit.",
-      ),
+    throw new Error(
+      "PRD-INV-013 Violation: Cannot delete a core system measurement unit.",
     );
   }
-  next();
 });
 
 // PRD-INV-013: Middleware to PREVENT MODIFICATION of core units
-unitSchema.pre("findOneAndUpdate", async function (next) {
+unitSchema.pre("findOneAndUpdate", async function () {
   const doc = await this.model.findOne(this.getQuery());
   if (doc && doc.isCore) {
     const update = this.getUpdate();
@@ -57,14 +54,11 @@ unitSchema.pre("findOneAndUpdate", async function (next) {
       update.$set?.name ||
       update.$set?.abbreviation
     ) {
-      return next(
-        new Error(
-          "PRD-INV-013 Violation: Cannot modify the name or abbreviation of a core system measurement unit.",
-        ),
+      throw new Error(
+        "PRD-INV-013 Violation: Cannot modify the name or abbreviation of a core system measurement unit.",
       );
     }
   }
-  next();
 });
 
 module.exports = mongoose.model("Unit", unitSchema);

@@ -17,45 +17,64 @@ const seedDatabase = async () => {
     const company = await Company.findOneAndUpdate(
       { name: "FactoryFlow HQ" },
       { name: "FactoryFlow HQ" },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: "after" }, // Fixed Mongoose warning
     );
     console.log(`🏢 Company ready: ${company.name}`);
 
     // --- CORE SEEDING START ---
 
-    // 3. Seed Core Units
-    const unitCount = await Unit.countDocuments({ companyId: company._id });
-    if (unitCount === 0) {
-      await Unit.insertMany([
-        {
+    // 3. Seed Core Units safely (Check if exists first to avoid update hooks)
+    const coreUnits = [
+      { name: "Piece", abbreviation: "pcs" },
+      { name: "Box", abbreviation: "box" },
+      { name: "Dozen", abbreviation: "dz" },
+      { name: "Pack", abbreviation: "pk" },
+      { name: "Roll", abbreviation: "rl" },
+      { name: "Pair", abbreviation: "pr" },
+      { name: "Set", abbreviation: "set" },
+      { name: "Pallet", abbreviation: "plt" },
+      { name: "Carton", abbreviation: "ctn" },
+      { name: "Case", abbreviation: "cs" },
+      { name: "Kilogram", abbreviation: "kg" },
+      { name: "Gram", abbreviation: "g" },
+      { name: "Milligram", abbreviation: "mg" },
+      { name: "Pound", abbreviation: "lb" },
+      { name: "Ounce", abbreviation: "oz" },
+      { name: "Ton", abbreviation: "t" },
+      { name: "Liter", abbreviation: "L" },
+      { name: "Milliliter", abbreviation: "mL" },
+      { name: "Gallon", abbreviation: "gal" },
+      { name: "Fluid Ounce", abbreviation: "fl oz" },
+      { name: "Cubic Meter", abbreviation: "m³" },
+      { name: "Meter", abbreviation: "m" },
+      { name: "Centimeter", abbreviation: "cm" },
+      { name: "Millimeter", abbreviation: "mm" },
+      { name: "Inch", abbreviation: "in" },
+      { name: "Foot", abbreviation: "ft" },
+      { name: "Square Meter", abbreviation: "sqm" },
+      { name: "Square Foot", abbreviation: "sqft" },
+    ];
+
+    let unitsAdded = 0;
+    for (const unit of coreUnits) {
+      const exists = await Unit.findOne({
+        companyId: company._id,
+        name: unit.name.toLowerCase(),
+      });
+
+      if (!exists) {
+        await Unit.create({
           companyId: company._id,
-          name: "Piece",
-          abbreviation: "pcs",
+          name: unit.name,
+          abbreviation: unit.abbreviation,
           isCore: true,
-        },
-        {
-          companyId: company._id,
-          name: "Box",
-          abbreviation: "box",
-          isCore: true,
-        },
-        {
-          companyId: company._id,
-          name: "Kilogram",
-          abbreviation: "kg",
-          isCore: true,
-        },
-        {
-          companyId: company._id,
-          name: "Liter",
-          abbreviation: "L",
-          isCore: true,
-        },
-      ]);
-      console.log("📏 Core Units seeded!");
-    } else {
-      console.log("📏 Core Units already exist.");
+        });
+        unitsAdded++;
+      }
     }
+    console.log(
+      `📏 ${unitsAdded} new Core Units added! (Total verified: ${coreUnits.length})`,
+    );
 
     // 4. Seed Default Location
     const locCount = await Location.countDocuments({ companyId: company._id });
@@ -93,7 +112,7 @@ const seedDatabase = async () => {
       const adminUser = await User.create({
         name: "Super Admin",
         email: "admin@test.com",
-        password: "16122003", // The pre-save hook in your User model will hash this
+        password: "16122003",
         role: "admin",
         companyId: company._id,
       });

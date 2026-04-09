@@ -68,7 +68,8 @@ const transactionSchema = new mongoose.Schema(
 );
 
 // ── NEW FEATURE (PRD-INV-017): Automated Transaction ID Generation ──
-transactionSchema.pre("save", function (next) {
+// FIX: Removed 'next' callback for synchronous Mongoose 8 hooks
+transactionSchema.pre("save", function () {
   if (!this.transactionId) {
     // Generate an ID based on the current date + 6 random hex characters
     // Example output: TXN-20260406-8F2A1C
@@ -77,7 +78,6 @@ transactionSchema.pre("save", function (next) {
 
     this.transactionId = `TXN-${datePrefix}-${randomStr}`;
   }
-  next();
 });
 
 module.exports = mongoose.model("Transaction", transactionSchema);

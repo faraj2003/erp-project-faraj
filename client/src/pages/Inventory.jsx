@@ -21,12 +21,13 @@ export default function Inventory() {
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
   const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
-  // UPDATED: Added categoryId to the form state
   const [addItemForm, setAddItemForm] = useState({
-    sku: '', name: '', type: 'raw_material', categoryId: '', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: ''
+    sku: '', name: '', productCompanyName: '', type: 'raw_material', categoryId: '', 
+    costPerUnit: '', shelfLife: '', dimensions: '', 
+    alertOrange: '', alertRed: '', alertCritical: '',
+    supplierName: '', supplierContact: '',
+    baseUnit: '', secUnitName: '', secUnitMultiplier: ''
   });
-
-  // ── QUERIES ──
 
   const { data: items, isLoading: itemsLoading } = useQuery({
     queryKey: ['inventory'],
@@ -44,7 +45,6 @@ export default function Inventory() {
     },
   });
 
-  // NEW: Fetch Multi-level Categories
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: async () => {
@@ -53,7 +53,6 @@ export default function Inventory() {
     },
   });
 
-  // NEW: Fetch System Units
   const { data: units = [] } = useQuery({
     queryKey: ['units'],
     queryFn: async () => {
@@ -62,14 +61,18 @@ export default function Inventory() {
     },
   });
 
-  // ── MUTATIONS ──
-
   const addItemMutation = useMutation({
     mutationFn: async (payload) => axios.post('/api/inventory', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setIsAddItemModalOpen(false);
-      setAddItemForm({ sku: '', name: '', type: 'raw_material', categoryId: '', minStockLevel: '', baseUnit: '', secUnitName: '', secUnitMultiplier: '' });
+      setAddItemForm({
+        sku: '', name: '', productCompanyName: '', type: 'raw_material', categoryId: '', 
+        costPerUnit: '', shelfLife: '', dimensions: '', 
+        alertOrange: '', alertRed: '', alertCritical: '',
+        supplierName: '', supplierContact: '',
+        baseUnit: '', secUnitName: '', secUnitMultiplier: ''
+      });
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to add new product.")
   });
@@ -104,8 +107,6 @@ export default function Inventory() {
     onError: (error) => alert(error.response?.data?.message || "Failed to issue stock.")
   });
 
-  // ── HANDLERS ──
-
   const handleExportItems = async () => {
     try {
       const response = await axios.get('/api/inventory/export/items', { responseType: 'blob' });
@@ -125,13 +126,24 @@ export default function Inventory() {
 
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
-    // UPDATED: Now submits the selected categoryId
     const payload = { 
       sku: addItemForm.sku,
       name: addItemForm.name,
+      productCompanyName: addItemForm.productCompanyName,
       type: addItemForm.type,
       categoryId: addItemForm.categoryId || null,
-      minStockLevel: Number(addItemForm.minStockLevel),
+      costPerUnit: Number(addItemForm.costPerUnit) || 0,
+      shelfLife: addItemForm.shelfLife,
+      dimensions: addItemForm.dimensions,
+      alertLevels: {
+        orange: Number(addItemForm.alertOrange),
+        red: Number(addItemForm.alertRed),
+        critical: Number(addItemForm.alertCritical)
+      },
+      supplier: {
+        name: addItemForm.supplierName,
+        contactInfo: addItemForm.supplierContact
+      },
       baseUnit: addItemForm.baseUnit,
       secondaryUnits: []
     };
@@ -207,12 +219,16 @@ export default function Inventory() {
           <div key={item._id} className="bg-white p-6 rounded shadow border border-gray-200">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">{item.name} <span className="text-sm font-normal text-gray-500">({item.sku})</span></h2>
-                <div className="flex items-center gap-2 mt-1">
+                <h2 className="text-xl font-bold text-gray-800">
+                  {item.name} <span className="text-sm font-normal text-gray-500">({item.sku})</span>
+                </h2>
+                {item.productCompanyName && (
+                   <p className="text-sm text-gray-600 mt-1">Brand/Mfg: <span className="font-medium">{item.productCompanyName}</span></p>
+                )}
+                <div className="flex items-center gap-2 mt-2">
                   <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded capitalize">
                     {item.type.replace('_', ' ')}
                   </span>
-                  {/* Safely display the populated Category name if it exists */}
                   {item.categoryId && item.categoryId.name && (
                      <span className="inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
                        {item.categoryId.name}
@@ -222,9 +238,20 @@ export default function Inventory() {
               </div>
               <div className="text-right">
                 <p className="text-sm text-gray-500 uppercase tracking-wide">Total Global Stock</p>
-                <p className={`text-2xl font-bold ${item.currentStock <= item.minStockLevel ? 'text-red-600' : 'text-green-600'}`}>
-                  {item.currentStock} {item.baseUnit}
-                </p>
+                
+                {(() => {
+                  let textColor = 'text-green-600';
+                  if (item.currentStock <= (item.alertLevels?.critical || 0)) textColor = 'text-red-800 font-black';
+                  else if (item.currentStock <= (item.alertLevels?.red || 0)) textColor = 'text-red-600';
+                  else if (item.currentStock <= (item.alertLevels?.orange || 0)) textColor = 'text-orange-500';
+
+                  return (
+                    <p className={`text-2xl font-bold ${textColor}`}>
+                      {item.currentStock} {item.baseUnit}
+                    </p>
+                  );
+                })()}
+
                 {item.stockEquivalents && Object.entries(item.stockEquivalents).map(([uName, uVal]) => (
                   <p key={uName} className="text-sm text-gray-500 font-medium mt-1">
                     ≈ {uVal} {uName}
@@ -275,7 +302,7 @@ export default function Inventory() {
       {/* --- ADD NEW PRODUCT MODAL --- */}
       {isAddItemModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full shadow-xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
+          <div className="bg-white rounded-lg p-6 max-w-3xl w-full shadow-xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
             <h2 className="text-xl font-bold mb-4">Add New Product to Catalog</h2>
             <form onSubmit={handleAddItemSubmit}>
               <div className="grid grid-cols-2 gap-4 mb-4">
@@ -289,7 +316,22 @@ export default function Inventory() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Product Company (Brand)</label>
+                  <input type="text" placeholder="e.g. Acme Corp" className="w-full border border-gray-300 rounded p-2" value={addItemForm.productCompanyName} onChange={(e) => setAddItemForm({ ...addItemForm, productCompanyName: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Cost Per Unit</label>
+                  <input type="number" min="0" step="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.costPerUnit} onChange={(e) => setAddItemForm({ ...addItemForm, costPerUnit: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Shelf Life</label>
+                  <input type="text" placeholder="e.g. 12 months" className="w-full border border-gray-300 rounded p-2" value={addItemForm.shelfLife} onChange={(e) => setAddItemForm({ ...addItemForm, shelfLife: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Type *</label>
                   <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.type} onChange={(e) => setAddItemForm({ ...addItemForm, type: e.target.value })} required>
@@ -297,7 +339,6 @@ export default function Inventory() {
                     <option value="finished_good">Finished Good</option>
                   </select>
                 </div>
-                {/* UPDATED: Dynamically fetched Categories Dropdown */}
                 <div>
                   <label className="block text-sm font-medium mb-1">Category</label>
                   <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
@@ -309,17 +350,47 @@ export default function Inventory() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Dimensions</label>
+                  <input type="text" placeholder="e.g. 10x10x5 cm" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimensions} onChange={(e) => setAddItemForm({ ...addItemForm, dimensions: e.target.value })} />
+                </div>
               </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Minimum Stock Level (Base Units) *</label>
-                <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.minStockLevel} onChange={(e) => setAddItemForm({ ...addItemForm, minStockLevel: e.target.value })} required />
+              <div className="bg-orange-50 p-3 rounded border border-orange-200 mb-4">
+                <h4 className="text-sm font-bold text-orange-800 mb-2">Stock Alert Thresholds (Base Units)</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-orange-700">Orange Alert (Warning)</label>
+                    <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.alertOrange} onChange={(e) => setAddItemForm({ ...addItemForm, alertOrange: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-red-600">Red Alert (Action Req)</label>
+                    <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.alertRed} onChange={(e) => setAddItemForm({ ...addItemForm, alertRed: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-red-800">Critical Alert (Outage)</label>
+                    <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.alertCritical} onChange={(e) => setAddItemForm({ ...addItemForm, alertCritical: e.target.value })} required />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 p-3 rounded border border-blue-200 mb-4">
+                <h4 className="text-sm font-bold text-blue-800 mb-2">Supplier Details</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Supplier Name</label>
+                    <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.supplierName} onChange={(e) => setAddItemForm({ ...addItemForm, supplierName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Supplier Contact Info</label>
+                    <input type="text" placeholder="Email, Phone, etc." className="w-full border border-gray-300 rounded p-2" value={addItemForm.supplierContact} onChange={(e) => setAddItemForm({ ...addItemForm, supplierContact: e.target.value })} />
+                  </div>
+                </div>
               </div>
 
               <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-6 mt-2">
                 <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Measurement Units</h3>
                 
-                {/* UPDATED: Dynamically fetched System Units Dropdown for Base Unit */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-1">Base Unit *</label>
                   <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value })} required>
@@ -328,18 +399,31 @@ export default function Inventory() {
                   </select>
                 </div>
 
+                {/* ── SECONDARY UNIT: UPDATED TO FREE TEXT FIELD ── */}
                 <div className="grid grid-cols-2 gap-4">
-                  {/* UPDATED: Dynamically fetched System Units Dropdown for Secondary Unit */}
                   <div>
-                    <label className="block text-sm font-medium mb-1">Secondary Unit</label>
-                    <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.secUnitName} onChange={(e) => setAddItemForm({ ...addItemForm, secUnitName: e.target.value })}>
-                      <option value="">-- None --</option>
-                      {units.map(u => <option key={u._id} value={u.name}>{u.name} ({u.abbreviation})</option>)}
-                    </select>
+                    <label className="block text-sm font-medium mb-1">Secondary Unit (Optional)</label>
+                    <input 
+                      type="text" 
+                      className="w-full border border-gray-300 rounded p-2" 
+                      value={addItemForm.secUnitName} 
+                      onChange={(e) => setAddItemForm({ ...addItemForm, secUnitName: e.target.value })} 
+                      placeholder="e.g., Piece, Slice, Gram (Free text)" 
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Multiplier to Base Unit</label>
-                    <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.secUnitMultiplier} onChange={(e) => setAddItemForm({ ...addItemForm, secUnitMultiplier: e.target.value })} placeholder={addItemForm.secUnitName ? `How many ${addItemForm.baseUnit || 'base'} in a ${addItemForm.secUnitName}?` : ""} required={!!addItemForm.secUnitName} disabled={!addItemForm.secUnitName} />
+                    <label className="block text-sm font-medium mb-1">Multiplier</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      min="0.01" 
+                      className="w-full border border-gray-300 rounded p-2" 
+                      value={addItemForm.secUnitMultiplier} 
+                      onChange={(e) => setAddItemForm({ ...addItemForm, secUnitMultiplier: e.target.value })} 
+                      placeholder={addItemForm.secUnitName ? `How many ${addItemForm.secUnitName} = 1 ${addItemForm.baseUnit || 'Base'}?` : ""} 
+                      required={!!addItemForm.secUnitName} 
+                      disabled={!addItemForm.secUnitName} 
+                    />
                   </div>
                 </div>
               </div>

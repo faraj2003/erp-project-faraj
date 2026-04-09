@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
@@ -14,6 +14,10 @@ export default function Adjustments() {
   // States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [reviewingAdjustment, setReviewingAdjustment] = useState(null);
+
+  // NEW: Cascading Filter States
+  const [filterType, setFilterType] = useState('');
+  const [filterDimension, setFilterDimension] = useState('');
 
   const [createForm, setCreateForm] = useState({
     itemId: '',
@@ -36,7 +40,7 @@ export default function Adjustments() {
     queryKey: ['inventory'],
     queryFn: async () => {
       const { data } = await axios.get('/api/inventory');
-      return data.data || data; // Handle array vs paginated response
+      return data.data || data; 
     },
   });
 
@@ -53,8 +57,7 @@ export default function Adjustments() {
     mutationFn: async ({ payload }) => axios.post('/api/inventory/adjustments', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adjustments'] });
-      setIsCreateModalOpen(false);
-      setCreateForm({ itemId: '', locationId: '', quantityChange: '', reason: '' });
+      closeCreateModal();
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to create adjustment")
   });
@@ -70,7 +73,7 @@ export default function Adjustments() {
     onError: (error) => alert(error.response?.data?.message || "Review failed")
   });
 
-  // ── NEW FEATURE: CSV Export ──
+  // ── CSV Export ──
   const handleExportAdjustments = async () => {
     try {
       const response = await axios.get('/api/inventory/export/adjustments', { responseType: 'blob' });
@@ -88,7 +91,26 @@ export default function Adjustments() {
     }
   };
 
-  // Handlers
+  // ── HANDLERS ──
+
+  const closeCreateModal = () => {
+    setIsCreateModalOpen(false);
+    setFilterType('');
+    setFilterDimension('');
+    setCreateForm({ itemId: '', locationId: '', quantityChange: '', reason: '' });
+  };
+
+  const handleTypeChange = (e) => {
+    setFilterType(e.target.value);
+    setFilterDimension(''); // Reset child filter
+    setCreateForm({ ...createForm, itemId: '' }); // Reset item selection
+  };
+
+  const handleDimensionChange = (e) => {
+    setFilterDimension(e.target.value);
+    setCreateForm({ ...createForm, itemId: '' }); // Reset item selection
+  };
+
   const handleCreateSubmit = (e, submitForReview) => {
     e.preventDefault();
     if (!createForm.itemId || !createForm.locationId || !createForm.quantityChange || !createForm.reason) {
@@ -110,6 +132,27 @@ export default function Adjustments() {
       payload: { action, reviewNotes }
     });
   };
+
+  // ── DERIVED STATE FOR CASCADING DROPDOWNS ──
+
+  const availableDimensions = useMemo(() => {
+    return Array.from(
+      new Set(
+        items
+          .filter(i => (filterType ? i.type === filterType : true))
+          .map(i => i.dimensions)
+          .filter(d => d && d.trim() !== '') // Remove empty dimensions
+      )
+    );
+  }, [items, filterType]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter(i => {
+      if (filterType && i.type !== filterType) return false;
+      if (filterDimension && i.dimensions !== filterDimension) return false;
+      return true;
+    });
+  }, [items, filterType, filterDimension]);
 
   // UI Helpers
   const getStatusBadge = (status) => {
@@ -213,33 +256,106 @@ export default function Adjustments() {
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-blue-600">
             <h2 className="text-xl font-bold mb-4 dark:text-white">Request Stock Adjustment</h2>
             <form>
+              
+              {/* 1. Item Type */}
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Item</label>
-                <select className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" value={createForm.itemId} onChange={(e) => setCreateForm({...createForm, itemId: e.target.value})} required>
-                  <option value="">-- Select Item --</option>
-                  {items.map(i => <option key={i._id} value={i._id}>{i.name} ({i.sku})</option>)}
+                <label className="block text-sm font-medium mb-1 dark:text-gray-300">1. Item Type</label>
+                <select 
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" 
+                  value={filterType} 
+                  onChange={handleTypeChange}
+                >
+                  <option value="">-- All Types --</option>
+                  <option value="raw_material">Raw Material</option>
+                  <option value="finished_good">Finished Good</option>
                 </select>
               </div>
+
+              {/* 2. Item Dimensions */}
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Location</label>
-                <select className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" value={createForm.locationId} onChange={(e) => setCreateForm({...createForm, locationId: e.target.value})} required>
+                <label className="block text-sm font-medium mb-1 dark:text-gray-300">2. Item Dimensions</label>
+                <select 
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" 
+                  value={filterDimension} 
+                  onChange={handleDimensionChange}
+                  disabled={availableDimensions.length === 0}
+                >
+                  <option value="">-- All Dimensions --</option>
+                  {availableDimensions.map(dim => (
+                    <option key={dim} value={dim}>{dim}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Name of the Product */}
+              <div className="mb-4 bg-blue-50 dark:bg-gray-900 p-3 rounded border border-blue-100 dark:border-gray-700">
+                <label className="block text-sm font-bold mb-1 text-blue-800 dark:text-blue-300">3. Select Product *</label>
+                <select 
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" 
+                  value={createForm.itemId} 
+                  onChange={(e) => setCreateForm({...createForm, itemId: e.target.value})} 
+                  required
+                >
+                  <option value="">-- Choose Product --</option>
+                  {filteredItems.map(i => (
+                    <option key={i._id} value={i._id}>
+                      {i.name} ({i.sku}) {i.dimensions ? `[${i.dimensions}]` : ''}
+                    </option>
+                  ))}
+                </select>
+                {filteredItems.length === 0 && (
+                  <p className="text-xs text-red-500 mt-1">No products match your selected type/dimensions.</p>
+                )}
+              </div>
+
+              {/* 4. Select Location */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1 dark:text-gray-300">4. Location Stored *</label>
+                <select 
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" 
+                  value={createForm.locationId} 
+                  onChange={(e) => setCreateForm({...createForm, locationId: e.target.value})} 
+                  required
+                >
                   <option value="">-- Select Location --</option>
                   {locations.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
                 </select>
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Quantity Change (Use '-' for deduction)</label>
-                <input type="number" step="0.01" className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" value={createForm.quantityChange} onChange={(e) => setCreateForm({...createForm, quantityChange: e.target.value})} placeholder="e.g. -5 or 10" required />
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                {/* 5. Quantity Change */}
+                <div>
+                  <label className="block text-sm font-medium mb-1 dark:text-gray-300">5. Add/Deduct Qty *</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" 
+                    value={createForm.quantityChange} 
+                    onChange={(e) => setCreateForm({...createForm, quantityChange: e.target.value})} 
+                    placeholder="e.g. -5 or +10" 
+                    required 
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Use '-' for deductions.</p>
+                </div>
               </div>
+
+              {/* 6. Reason */}
               <div className="mb-6">
-                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Reason for Discrepancy</label>
-                <textarea className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" rows="2" value={createForm.reason} onChange={(e) => setCreateForm({...createForm, reason: e.target.value})} placeholder="e.g. Damaged goods, found extra stock" required></textarea>
+                <label className="block text-sm font-medium mb-1 dark:text-gray-300">6. Reason for Adjustment *</label>
+                <textarea 
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" 
+                  rows="2" 
+                  value={createForm.reason} 
+                  onChange={(e) => setCreateForm({...createForm, reason: e.target.value})} 
+                  placeholder="e.g. Damaged goods, found extra stock, expired..." 
+                  required
+                ></textarea>
               </div>
               
               <div className="flex justify-end gap-3 mt-2 pt-4 border-t border-gray-100 dark:border-gray-700">
-                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm">Cancel</button>
-                <button type="button" onClick={(e) => handleCreateSubmit(e, false)} disabled={createMutation.isLoading} className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium">Save Draft</button>
-                <button type="button" onClick={(e) => handleCreateSubmit(e, true)} disabled={createMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium">Submit for Review</button>
+                <button type="button" onClick={closeCreateModal} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm">Cancel</button>
+                <button type="button" onClick={(e) => handleCreateSubmit(e, false)} disabled={createMutation.isLoading || !createForm.itemId} className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium">Save Draft</button>
+                <button type="button" onClick={(e) => handleCreateSubmit(e, true)} disabled={createMutation.isLoading || !createForm.itemId} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-medium">Submit for Review</button>
               </div>
             </form>
           </div>

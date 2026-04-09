@@ -74,7 +74,8 @@ const orderSchema = new mongoose.Schema(
 // Order numbers must be unique per company, not globally
 orderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true });
 
-orderSchema.pre("save", function (next) {
+// FIX: Removed 'next' callback for Mongoose 8 compatibility
+orderSchema.pre("save", function () {
   if (this.isNew && this.statusHistory.length === 0) {
     this.statusHistory.push({
       status: this.status,
@@ -82,7 +83,6 @@ orderSchema.pre("save", function (next) {
       timestamp: new Date(),
     });
   }
-  next();
 });
 
 module.exports = mongoose.model("Order", orderSchema);

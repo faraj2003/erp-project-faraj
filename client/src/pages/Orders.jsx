@@ -1,3 +1,4 @@
+// src/pages/Orders.jsx
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -85,6 +86,7 @@ export default function Orders() {
             <tr>
               <th className="p-4 font-semibold text-gray-600">Order #</th>
               <th className="p-4 font-semibold text-gray-600">Shop / Location</th>
+              <th className="p-4 font-semibold text-gray-600">Notes</th>
               <th className="p-4 font-semibold text-gray-600">Status</th>
               <th className="p-4 font-semibold text-gray-600">Update</th>
             </tr>
@@ -94,6 +96,7 @@ export default function Orders() {
               <tr key={order._id} className="hover:bg-gray-50">
                 <td className="p-4 font-mono font-bold text-gray-800">{order.orderNumber}</td>
                 <td className="p-4 text-gray-600 font-medium">{order.locationId?.name || 'Unknown'}</td>
+                <td className="p-4 text-gray-500 max-w-[200px] truncate">{order.notes || '-'}</td>
                 <td className="p-4"><StatusBadge status={order.status} /></td>
                 <td className="p-4">
                   {isManager() && order.status !== 'Completed' && order.status !== 'Cancelled' && (
@@ -130,12 +133,10 @@ export default function Orders() {
                   <div key={input._id} className="grid grid-cols-12 gap-4 items-center bg-gray-50 p-3 rounded border border-gray-200">
                     <div className="col-span-4">
                       <p className="font-bold text-gray-800">{input.itemId.name}</p>
-                      {/* UPDATED: Changed itemId.unit to itemId.baseUnit */}
                       <p className="text-xs text-gray-500">Required: {input.quantityRequired} {input.itemId.baseUnit}</p>
                     </div>
                     
                     <div className="col-span-4">
-                      {/* UPDATED: Changed itemId.unit to itemId.baseUnit */}
                       <label className="block text-xs font-medium text-gray-700 mb-1">Actually Utilized ({input.itemId.baseUnit})</label>
                       <input 
                         type="number" step="0.01" min="0" required
@@ -148,7 +149,6 @@ export default function Orders() {
                     </div>
 
                     <div className="col-span-4">
-                      {/* UPDATED: Changed itemId.unit to itemId.baseUnit */}
                       <label className="block text-xs font-medium text-red-600 mb-1">Scrapped/Wasted ({input.itemId.baseUnit})</label>
                       <input 
                         type="number" step="0.01" min="0" required
