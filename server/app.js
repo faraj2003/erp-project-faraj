@@ -7,6 +7,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 const errorHandler = require("./middleware/errorHandler");
+const procurementRoutes = require("./routes/procurementRoutes");
 
 const createApp = () => {
   const app = express();
@@ -51,6 +52,7 @@ const createApp = () => {
   app.use("/api/orders", require("./routes/orderRoutes"));
   app.use("/api/analytics", require("./routes/analyticsRoutes"));
   app.use("/api/locations", require("./routes/locationRoutes"));
+  app.use("/api/procurement", procurementRoutes);
 
   // Newly added system routes for Categories and Units
   app.use("/api/system", require("./routes/systemRoutes"));

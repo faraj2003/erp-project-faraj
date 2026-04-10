@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -9,10 +10,13 @@ import Orders from './pages/Orders';
 import NewOrder from './pages/NewOrder';
 import Users from './pages/Users';
 import Locations from './pages/Locations';
-import Categories from './pages/Categories'; // <-- NEW IMPORT
-import Units from './pages/Units';           // <-- NEW IMPORT
+import Categories from './pages/Categories';
+import Units from './pages/Units';
+import Procurement from './pages/Procurement';
+
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
+import {useSocketStore} from './store/socketStore'; // ✅ make sure this exists
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,11 +29,30 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+
+  // ✅ FIX: Hook must be inside component
+  useEffect(() => {
+    const socket = useSocketStore.getState().socket;
+
+    if (!socket) return;
+
+    const handler = (data) => {
+      alert(`PROCUREMENT ALERT from ${data.sender}:\n\n${data.message}`);
+    };
+
+    socket.on('custom_alert', handler);
+
+    return () => {
+      socket.off('custom_alert', handler);
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          {/* Public */}
+
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
 
@@ -40,6 +63,7 @@ function App() {
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/adjustments" element={<Adjustments />} />
               <Route path="/orders" element={<Orders />} />
+              <Route path="/procurement" element={<Procurement />} />
             </Route>
           </Route>
 
@@ -48,7 +72,6 @@ function App() {
             <Route element={<AppShell />}>
               <Route path="/orders/new" element={<NewOrder />} />
               <Route path="/locations" element={<Locations />} />
-              {/* --- NEW SYSTEM SETTINGS ROUTES --- */}
               <Route path="/categories" element={<Categories />} />
               <Route path="/units" element={<Units />} />
             </Route>
@@ -63,6 +86,7 @@ function App() {
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/login" replace />} />
+
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

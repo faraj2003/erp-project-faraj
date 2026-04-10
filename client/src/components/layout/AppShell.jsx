@@ -16,7 +16,7 @@ const navItems = [
     label: 'Dashboard',
     path: '/dashboard',
     icon: '📊',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'],
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager','procurement_manager'],
   },
   {
     label: 'Inventory',
@@ -36,6 +36,14 @@ const navItems = [
     icon: '🏭',
     roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'],
   },
+
+  {
+    label: 'Procurement',
+    path: '/procurement',
+    icon: '🚚',
+    roles: ['admin', 'manager', 'procurement_manager'],
+  },
+  
   {
     label: 'Locations', // <-- RESTORED LOCATIONS BUTTON
     path: '/locations',
