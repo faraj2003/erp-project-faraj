@@ -47,12 +47,10 @@ exports.sendCustomAlert = async (req, res) => {
     const io = req.app.get("io");
 
     if (!io) {
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Socket instance not found on server.",
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Socket instance not found on server.",
+      });
     }
 
     const alertPayload = {
@@ -72,6 +70,17 @@ exports.sendCustomAlert = async (req, res) => {
     res
       .status(200)
       .json({ success: true, message: "Alert broadcasted successfully." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const Item = require("../models/Item");
+// @desc Get items specifically for the procurement dropdowns
+exports.getProcurementItems = async (req, res) => {
+  try {
+    const items = await Item.find({ isArchived: false }).select("name sku");
+    res.status(200).json({ success: true, data: items });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

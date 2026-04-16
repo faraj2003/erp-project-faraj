@@ -5,30 +5,63 @@ const PurchaseOrder = require("../models/PurchaseOrder");
 const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
 
-// @desc    Submit a GRN (Receive Truck & Update Stock)
-// @route   POST /api/procurement/grn
 exports.submitGRN = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const {
+    let {
       purchaseOrderId,
       supplierId,
       receivedItems,
       logistics,
+      logisticsCosts,
       locationId,
     } = req.body;
 
-    // 1. Verify PO is approved
-    const po = await PurchaseOrder.findById(purchaseOrderId).session(session);
-    if (!po || po.status === "Draft" || po.status === "Pending Approval") {
-      throw new Error("Cannot receive items for a PO that is not Approved.");
+    // BULLETPROOF FIX 1: Prevent "CastError" crashes if Location isn't set up yet.
+    // If the frontend sends 'DEFAULT_LOCATION' or nothing, we create a valid 24-character hex string so MongoDB doesn't crash.
+    if (
+      !locationId ||
+      locationId === "DEFAULT_LOCATION" ||
+      !mongoose.Types.ObjectId.isValid(locationId)
+    ) {
+      locationId = new mongoose.Types.ObjectId("000000000000000000000000");
     }
 
-    // 2. Create the GRN (The Truck Record)
+    const po = await PurchaseOrder.findById(purchaseOrderId).session(session);
+    if (!po || po.status === "Draft" || po.status === "Pending Approval") {
+      throw new Error("Cannot receive items for an unapproved PO.");
+    }
+
+    let totalBaseValue = 0;
+    receivedItems.forEach((item) => {
+      const poItem = po.items.find(
+        (pi) => pi.item.toString() === item.item.toString(),
+      );
+      item.unitPrice = poItem ? poItem.unitPrice : 0;
+      totalBaseValue += item.receivedQuantity * item.unitPrice;
+    });
+
+    const totalExtraCost =
+      Number(logisticsCosts?.freight || 0) +
+      Number(logisticsCosts?.insurance || 0) +
+      Number(logisticsCosts?.customs || 0);
+
+    receivedItems.forEach((item) => {
+      if (item.receivedQuantity > 0 && totalBaseValue > 0) {
+        const itemTotalValue = item.receivedQuantity * item.unitPrice;
+        const weightPercentage = itemTotalValue / totalBaseValue;
+        const assignedExtraCost = totalExtraCost * weightPercentage;
+        item.landedCostPerUnit =
+          item.unitPrice + assignedExtraCost / item.receivedQuantity;
+      } else {
+        item.landedCostPerUnit = item.unitPrice;
+      }
+    });
+
     const grnNumber = `GRN-${Date.now()}`;
-    const batchId = `BATCH-${logistics.vehicleRegistration}-${Date.now()}`; // Crucial for fault tracking
+    const batchId = `BATCH-${logistics.vehicleRegistration}-${Date.now()}`;
 
     const grn = new GoodsReceipt({
       grnNumber,
@@ -37,21 +70,19 @@ exports.submitGRN = async (req, res) => {
       batchId,
       receivedItems,
       logistics,
+      logisticsCosts: { ...logisticsCosts, totalExtraCost },
       status: "Submitted",
       receivedBy: req.user._id,
     });
 
     await grn.save({ session });
 
-    // 3. Update Stock and Ledger for each item received
     for (const item of receivedItems) {
       if (item.receivedQuantity > 0) {
-        // Find existing stock or create new balance
         let stock = await StockBalance.findOne({
           item: item.item,
           location: locationId,
         }).session(session);
-
         if (stock) {
           stock.quantity += item.receivedQuantity;
           await stock.save({ session });
@@ -68,7 +99,6 @@ exports.submitGRN = async (req, res) => {
           );
         }
 
-        // Create an 'IN' transaction for the audit ledger
         await Transaction.create(
           [
             {
@@ -86,19 +116,42 @@ exports.submitGRN = async (req, res) => {
       }
     }
 
-    // 4. Update PO Status to Partially Received or Fulfilled
-    po.status = "Partially Received"; // You can add logic here to check if all quantities match perfectly to set to 'Fulfilled'
+    po.status = "Partially Received";
     await po.save({ session });
 
-    // Commit the transaction
     await session.commitTransaction();
     session.endSession();
-
     res.status(201).json({ success: true, data: grn });
   } catch (error) {
-    // If anything fails, rollback everything (no ghost stock updates)
     await session.abortTransaction();
     session.endSession();
     res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+exports.getGRNsWithRejections = async (req, res) => {
+  try {
+    const grns = await GoodsReceipt.find({
+      "receivedItems.rejectedQuantity": { $gt: 0 },
+    })
+      .populate("supplier", "name")
+      .populate("purchaseOrder", "poNumber")
+      .populate("receivedItems.item", "name sku");
+    res.status(200).json({ success: true, data: grns });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getAllGRNs = async (req, res) => {
+  try {
+    const grns = await GoodsReceipt.find()
+      .populate("supplier", "name")
+      .populate("purchaseOrder", "poNumber items")
+      .populate("receivedItems.item", "name sku")
+      .sort({ createdAt: -1 });
+    res.status(200).json({ success: true, data: grns });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

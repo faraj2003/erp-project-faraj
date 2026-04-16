@@ -1,13 +1,13 @@
 // server/routes/procurementRoutes.js
 const express = require("express");
 const router = express.Router();
-const { protect } = require("../middleware/authMiddleware"); // Standard ERP auth middleware
-const {
-  getProcurementStats,
-  sendCustomAlert,
-} = require("../controllers/procurementExtrasController");
+const { protect } = require("../middleware/authMiddleware");
 
-// Import Controllers
+// --- Imports ---
+const {
+  submitInvoice,
+  getInvoices,
+} = require("../controllers/invoiceController");
 const {
   createSupplier,
   getSuppliers,
@@ -17,9 +17,31 @@ const {
   getPOs,
   approvePO,
 } = require("../controllers/purchaseOrderController");
-const { submitGRN } = require("../controllers/goodsReceiptController");
+const {
+  submitGRN,
+  getGRNsWithRejections,
+  getAllGRNs,
+} = require("../controllers/goodsReceiptController"); // FIXED: Added getAllGRNs
+const {
+  createReturn,
+  getReturns,
+} = require("../controllers/returnOrderController");
+const { runSmartOrdering } = require("../controllers/automationController");
+const {
+  createRFQ,
+  getAllRFQs,
+  submitBid,
+  awardBid,
+} = require("../controllers/rfqController");
 
-// All routes are protected - user must be logged in
+// FIXED: Consolidated into a single import
+const {
+  getProcurementStats,
+  sendCustomAlert,
+  getProcurementItems,
+} = require("../controllers/procurementExtrasController");
+
+// All routes are protected
 router.use(protect);
 
 // --- Supplier Routes ---
@@ -27,15 +49,33 @@ router.route("/suppliers").post(createSupplier).get(getSuppliers);
 
 // --- Purchase Order Routes ---
 router.route("/po").post(createPO).get(getPOs);
-
-// The crucial Approval Route for Point 5 (Consider adding an admin/manager role check here later)
 router.put("/po/:id/approve", approvePO);
 
 // --- Goods Receipt (Truck Arrival) Routes ---
 router.post("/grn", submitGRN);
+router.get("/grn", getAllGRNs);
+router.get("/grn/rejections", getGRNsWithRejections);
 
+// --- Return to Vendor (RTV) Routes ---
+router.post("/rtv", createReturn);
+router.get("/rtv", getReturns);
+
+// --- Advanced Stats & Alerts ---
 router.get("/stats", getProcurementStats);
-
 router.post("/alert", sendCustomAlert);
+router.get("/items", getProcurementItems); // FIXED: Added missing items route for Sprint 4
+
+// --- SPRINT 2: Automation ---
+router.post("/auto-order", runSmartOrdering);
+
+// --- SPRINT 3: Invoice & 3-Way Matching ---
+router.post("/invoice", submitInvoice);
+router.get("/invoice", getInvoices);
+
+// --- SPRINT 4: RFQ & Bidding Ecosystem (FIXED: Added missing routes) ---
+router.post("/rfq", createRFQ);
+router.get("/rfq", getAllRFQs);
+router.post("/rfq/bid", submitBid);
+router.put("/rfq/award", awardBid);
 
 module.exports = router;

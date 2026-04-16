@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const goodsReceiptSchema = new mongoose.Schema(
   {
-    grnNumber: { type: String, required: true, unique: true }, // Goods Receipt Note Number
+    grnNumber: { type: String, required: true, unique: true },
     purchaseOrder: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PurchaseOrder",
@@ -13,8 +13,6 @@ const goodsReceiptSchema = new mongoose.Schema(
       ref: "Supplier",
       required: true,
     },
-
-    // The unique identifier for this specific delivery used for fault tracking
     batchId: { type: String, required: true, unique: true },
 
     receivedItems: [
@@ -26,24 +24,29 @@ const goodsReceiptSchema = new mongoose.Schema(
         },
         expectedQuantity: { type: Number, required: true },
         receivedQuantity: { type: Number, required: true, min: 0 },
-        // If items arrive broken, they are rejected here and don't enter stock
         rejectedQuantity: { type: Number, default: 0 },
+        unitPrice: { type: Number }, // Raw price from PO
+        landedCostPerUnit: { type: Number }, // New: Price + distributed shipping costs
         notes: { type: String },
       },
     ],
 
-    // Point 6: Truck and Logistics tracking
+    // NEW: Landed Cost Tracking
+    logisticsCosts: {
+      freight: { type: Number, default: 0 },
+      insurance: { type: Number, default: 0 },
+      customs: { type: Number, default: 0 },
+      totalExtraCost: { type: Number, default: 0 },
+    },
+
     logistics: {
       vehicleRegistration: { type: String, required: true },
       driverName: { type: String },
-      driverPhone: { type: String },
       waybillNumber: { type: String },
       arrivalTimestamp: { type: Date, default: Date.now },
     },
 
-    // 'Draft' means the truck is unloading. 'Submitted' means it's officially in inventory.
     status: { type: String, enum: ["Draft", "Submitted"], default: "Draft" },
-
     receivedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

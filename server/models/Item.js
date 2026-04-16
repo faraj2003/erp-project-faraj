@@ -27,7 +27,7 @@ const itemSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // NEW FIX: Links the Item to the Category Hierarchy
+    // Links the Item to the Category Hierarchy
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
@@ -40,13 +40,11 @@ const itemSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
-    // 1 - Company name of the product (Manufacturer/Brand)
     productCompanyName: {
       type: String,
       trim: true,
       default: "",
     },
-    // 2 & 3 - Name and Type
     name: {
       type: String,
       required: true,
@@ -61,23 +59,19 @@ const itemSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    // PRD-INV-013: Primary Measurement logic
     baseUnit: {
       type: String,
       required: true,
       lowercase: true,
     },
-    // 9 - Secondary units mapping
     secondaryUnits: [secondaryUnitSchema],
 
-    // 7 - Multi-level stock alerts (Replaces single minStockLevel)
     alertLevels: {
-      orange: { type: Number, required: true, default: 0, min: 0 }, // Warning
-      red: { type: Number, required: true, default: 0, min: 0 }, // Action required
-      critical: { type: Number, required: true, default: 0, min: 0 }, // Severe shortage
+      orange: { type: Number, required: true, default: 0, min: 0 },
+      red: { type: Number, required: true, default: 0, min: 0 },
+      critical: { type: Number, required: true, default: 0, min: 0 },
     },
 
-    // Valuation fields required by PRD-INV-040 exports
     costPerUnit: {
       type: Number,
       default: 0,
@@ -89,30 +83,33 @@ const itemSchema = new mongoose.Schema(
       min: 0,
     },
 
-    // 5 - Shelf Life
     shelfLife: {
       type: String,
       trim: true,
       default: "",
     },
-    // 6 - Dimensions of the product
     dimensions: {
       type: String,
       trim: true,
       default: "",
     },
 
-    // 10 - Supplier Information
-    supplier: {
-      name: { type: String, trim: true, default: "" },
-      contactInfo: { type: String, trim: true, default: "" },
+    // --- SPRINT 2: SMART PROCUREMENT LINKS ---
+    defaultSupplier: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Supplier",
+      default: null,
+    },
+    reorderQuantity: {
+      type: Number,
+      default: 100, // Default batch size the system will auto-order
+      min: 1,
     },
 
     imageUrl: {
       type: String,
       default: "",
     },
-    // PRD-INV-008: Soft-delete implementation
     isArchived: {
       type: Boolean,
       default: false,
@@ -121,7 +118,7 @@ const itemSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Ensure SKU is unique per company instance to prevent cross-contamination
+// Ensure SKU is unique per company instance
 itemSchema.index({ companyId: 1, sku: 1 }, { unique: true });
 
 module.exports = mongoose.model("Item", itemSchema);
