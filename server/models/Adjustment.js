@@ -1,21 +1,13 @@
-// server/models/Adjustment.js
 const mongoose = require("mongoose");
 
 const adjustmentSchema = new mongoose.Schema(
   {
-    // PRD-INV-037: Scope every adjustment to its owning company
-    companyId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
-      required: true,
-      index: true,
-    },
-    itemId: {
+    item: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",
       required: true,
     },
-    locationId: {
+    location: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
       required: true,
@@ -23,30 +15,28 @@ const adjustmentSchema = new mongoose.Schema(
     quantityChange: {
       type: Number,
       required: true,
+      // Can be positive (found extra stock) or negative (lost/damaged stock)
     },
     reason: {
       type: String,
       required: true,
-      trim: true,
     },
     status: {
       type: String,
-      enum: ["draft", "pending", "approved", "rejected"],
-      default: "draft",
+      enum: ["Draft", "Pending_Review", "Approved", "Rejected"],
+      default: "Draft",
     },
-    requestedBy: {
+    maker: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: true, // The staff member who reported the discrepancy
     },
-    reviewedBy: {
+    checker: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
+      ref: "User", // The manager who approves/rejects it
     },
-    reviewNotes: {
+    managerNotes: {
       type: String,
-      default: "",
     },
   },
   { timestamps: true },

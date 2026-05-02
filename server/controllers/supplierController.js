@@ -1,27 +1,49 @@
-// server/controllers/supplierController.js
 const Supplier = require("../models/Supplier");
+const AppError = require("../utils/AppError");
 
-// @desc    Create a new supplier
-// @route   POST /api/procurement/suppliers
-exports.createSupplier = async (req, res) => {
+exports.getAllSuppliers = async (req, res, next) => {
   try {
-    const supplier = new Supplier(req.body);
-    const savedSupplier = await supplier.save();
-    res.status(201).json({ success: true, data: savedSupplier });
+    const suppliers = await Supplier.find().sort({ name: 1 });
+    res.status(200).json({ status: "success", data: suppliers });
   } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    next(error);
   }
 };
 
-// @desc    Get all active suppliers
-// @route   GET /api/procurement/suppliers
-exports.getSuppliers = async (req, res) => {
+exports.createSupplier = async (req, res, next) => {
   try {
-    const suppliers = await Supplier.find({ isActive: true }).sort({
-      createdAt: -1,
-    });
-    res.status(200).json({ success: true, data: suppliers });
+    const newSupplier = await Supplier.create(req.body);
+    res
+      .status(201)
+      .json({
+        status: "success",
+        message: "Supplier added.",
+        data: newSupplier,
+      });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    if (error.code === 11000)
+      return next(
+        new AppError("A supplier with this name already exists.", 400),
+      );
+    next(error);
+  }
+};
+
+exports.updateSupplier = async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+    if (!supplier) throw new AppError("Supplier not found", 404);
+    res
+      .status(200)
+      .json({
+        status: "success",
+        message: "Supplier updated.",
+        data: supplier,
+      });
+  } catch (error) {
+    next(error);
   }
 };

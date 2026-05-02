@@ -10,7 +10,7 @@ const {
 } = require("../controllers/invoiceController");
 const {
   createSupplier,
-  getSuppliers,
+  getAllSuppliers,
 } = require("../controllers/supplierController");
 const {
   createPO,
@@ -45,7 +45,7 @@ const {
 router.use(protect);
 
 // --- Supplier Routes ---
-router.route("/suppliers").post(createSupplier).get(getSuppliers);
+router.route("/suppliers").post(createSupplier).get(getAllSuppliers);
 
 // --- Purchase Order Routes ---
 router.route("/po").post(createPO).get(getPOs);

@@ -1,99 +1,150 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect } from 'react';
 import api from '../lib/axios';
 
 export default function Units() {
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState({ name: '', abbreviation: '' });
-
-  const { data: units = [], isLoading } = useQuery({
-    queryKey: ['units'],
-    queryFn: async () => {
-      const { data } = await api.get('/api/system/units');
-      return data.data;
-    },
+  const [units, setUnits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [formData, setFormData] = useState({
+    name: '',
+    abbreviation: '',
+    baseUnit: 'pcs',
+    conversionRate: ''
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (payload) => api.post('/api/system/units', payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['units'] });
-      setForm({ name: '', abbreviation: '' });
-    },
-    onError: (err) => alert(err.response?.data?.message || 'Failed to create unit.')
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id) => api.delete(`/api/system/units/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['units'] }),
-    onError: (err) => alert(err.response?.data?.message || 'Failed to delete unit.')
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    createMutation.mutate(form);
+  const fetchUnits = async () => {
+    try {
+      const response = await api.get('/units');
+      setUnits(response.data.data || []);
+    } catch (error) {
+      console.error('Failed to fetch units', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (isLoading) return <div className="p-6">Loading units...</div>;
+  useEffect(() => {
+    fetchUnits();
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/units', {
+        ...formData,
+        conversionRate: Number(formData.conversionRate)
+      });
+      setFormData({ name: '', abbreviation: '', baseUnit: 'pcs', conversionRate: '' });
+      fetchUnits(); // Refresh the list
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to create unit');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this unit?')) return;
+    try {
+      await api.delete(`/units/${id}`);
+      fetchUnits();
+    } catch (error) {
+      alert('Failed to delete unit');
+    }
+  };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Measurement Units</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage secondary units for your inventory conversions.</p>
+    <div className="max-w-7xl mx-auto p-6 space-y-8">
+      
+      <div className="border-b pb-4">
+        <h1 className="text-3xl font-light text-gray-900">Custom Units of Measurement</h1>
+        <p className="text-sm text-gray-500 mt-1">Define conversion rates for bulk receiving and issuing.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Create Form */}
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm h-fit">
-          <h2 className="text-lg font-bold mb-4 dark:text-white">Add Custom Unit</h2>
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1 dark:text-gray-300">Name</label>
-              <input type="text" required placeholder="e.g. Pallet" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1 dark:text-gray-300">Abbreviation</label>
-              <input type="text" required placeholder="e.g. plt" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={form.abbreviation} onChange={e => setForm({...form, abbreviation: e.target.value})} />
-            </div>
-            <button type="submit" disabled={createMutation.isLoading} className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 font-medium">
-              Create Unit
-            </button>
-          </form>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Create Unit Form */}
+        <div className="lg:col-span-1">
+          <div className="bg-white p-6 rounded-xl border shadow-sm">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">Add New Unit</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Unit Name</label>
+                <input 
+                  type="text" required placeholder="e.g., Pallet"
+                  className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Abbreviation</label>
+                <input 
+                  type="text" required placeholder="e.g., PLT"
+                  className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 uppercase"
+                  value={formData.abbreviation} onChange={(e) => setFormData({...formData, abbreviation: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Target Base Unit</label>
+                <input 
+                  type="text" required placeholder="e.g., pcs"
+                  className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 lowercase"
+                  value={formData.baseUnit} onChange={(e) => setFormData({...formData, baseUnit: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Conversion Rate</label>
+                <input 
+                  type="number" step="0.01" required placeholder="e.g., 500"
+                  className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  value={formData.conversionRate} onChange={(e) => setFormData({...formData, conversionRate: e.target.value})}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  1 {formData.name || '[Unit]'} = {formData.conversionRate || '[X]'} {formData.baseUnit || '[Base Unit]'}
+                </p>
+              </div>
+              <button type="submit" className="w-full bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800">
+                Save Unit
+              </button>
+            </form>
+          </div>
         </div>
 
-        {/* Units Table */}
-        <div className="md:col-span-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-900/50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Abbreviation</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">System Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {units.map(unit => (
-                <tr key={unit._id}>
-                  <td className="px-6 py-4 text-sm font-medium capitalize dark:text-white">{unit.name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{unit.abbreviation}</td>
-                  <td className="px-6 py-4 text-sm">
-                    {unit.isCore 
-                      ? <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">CORE UNIT (Protected)</span>
-                      : <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-bold">CUSTOM</span>
-                    }
-                  </td>
-                  <td className="px-6 py-4 text-right text-sm">
-                    {!unit.isCore && (
-                      <button onClick={() => deleteMutation.mutate(unit._id)} className="text-red-600 hover:text-red-900 font-medium">Delete</button>
-                    )}
-                  </td>
+        {/* Existing Units Table */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+            <table className="w-full text-left text-sm text-gray-600">
+              <thead className="bg-gray-50 text-gray-700 text-xs uppercase border-b">
+                <tr>
+                  <th className="px-6 py-3 font-medium">Name</th>
+                  <th className="px-6 py-3 font-medium">Abbr.</th>
+                  <th className="px-6 py-3 font-medium">Conversion Logic</th>
+                  <th className="px-6 py-3 font-medium text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y">
+                {loading ? (
+                  <tr><td colSpan="4" className="px-6 py-8 text-center">Loading...</td></tr>
+                ) : units.length === 0 ? (
+                  <tr><td colSpan="4" className="px-6 py-8 text-center text-gray-500">No custom units defined.</td></tr>
+                ) : (
+                  units.map((unit) => (
+                    <tr key={unit._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 font-medium text-gray-900">{unit.name}</td>
+                      <td className="px-6 py-4 font-mono text-xs">{unit.abbreviation}</td>
+                      <td className="px-6 py-4 font-mono text-xs bg-gray-50 rounded">
+                        1 <span className="font-bold">{unit.abbreviation}</span> = {unit.conversionRate} <span className="font-bold">{unit.baseUnit}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button onClick={() => handleDelete(unit._id)} className="text-red-600 hover:text-red-800 text-xs font-medium">
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+
       </div>
     </div>
   );

@@ -1,50 +1,40 @@
-// src/lib/axios.js
-// A single, pre-configured Axios instance used across the entire app.
-// - Reads the API base URL from the env variable (no more hardcoded localhost)
-// - Automatically attaches the JWT Bearer token to every request
-// - Handles 401 responses globally by clearing auth state
+import axios from "axios";
 
-import axios from 'axios';
+// Helper to determine the clean base URL
+const getBaseURL = () => {
+  const envUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+  // If the URL already ends with /api/v1, don't add it again
+  if (envUrl.endsWith("/api/v1")) {
+    return envUrl;
+  }
+
+  // If it ends with /api, just add /v1
+  if (envUrl.endsWith("/api")) {
+    return `${envUrl}/v1`;
+  }
+
+  // Otherwise, add the full path
+  return `${envUrl}/api/v1`;
+};
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: getBaseURL(),
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
-// Request interceptor — attach token to every outgoing request
+// Interceptor to automatically attach the JWT token to every request
 api.interceptors.request.use(
   (config) => {
-    // Dynamically read from storage so it always picks up the latest token
-    const raw = localStorage.getItem('factoryflow-auth');
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        const token = parsed?.state?.token;
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-      } catch {
-        // Malformed storage — ignore
-      }
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor — redirect to login on 401
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Clear auth storage and redirect
-      localStorage.removeItem('factoryflow-auth');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error),
 );
 
 export default api;

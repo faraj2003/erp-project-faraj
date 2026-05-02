@@ -1,152 +1,107 @@
-// server/controllers/analyticsController.js
+const mongoose = require("mongoose");
 const Transaction = require("../models/Transaction");
-const Order = require("../models/Order");
+const StockBalance = require("../models/StockBalance");
 const Item = require("../models/Item");
 const AppError = require("../utils/AppError");
 
-// @desc    Get total production metrics grouped by item
-// @route   GET /api/analytics/production
-// @access  Private (Admin/Manager)
-exports.getProductionMetrics = async (req, res, next) => {
+exports.getInventoryReports = async (req, res, next) => {
   try {
-    const companyId = req.companyId;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const production = await Transaction.aggregate([
-      { $match: { companyId, type: "addition", orderId: { $ne: null } } },
+    // 1. Inventory Valuation & Total Stock
+    // Note: Since we didn't define a 'price' field earlier, we will calculate total volume.
+    // If you add a 'unitCost' to the Item model later, you can multiply it here.
+    const stockAggregations = await StockBalance.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalItemsInStock: { $sum: "$quantity" },
+          uniqueLocationsActive: { $addToSet: "$location" },
+        },
+      },
+    ]);
+
+    const totalStock =
+      stockAggregations.length > 0 ? stockAggregations[0].totalItemsInStock : 0;
+
+    // 2. Fast / Slow Moving Items (Based on 'Issue' transactions in the last 30 days)
+    const movementVelocity = await Transaction.aggregate([
+      {
+        $match: {
+          actionType: "Issue",
+          createdAt: { $gte: thirtyDaysAgo },
+        },
+      },
+      {
+        $group: {
+          _id: "$item",
+          totalIssued: { $sum: "$quantityChanged" },
+          issueFrequency: { $sum: 1 },
+        },
+      },
+      { $sort: { totalIssued: -1 } },
       {
         $lookup: {
           from: "items",
-          localField: "itemId",
+          localField: "_id",
           foreignField: "_id",
-          as: "itemData",
+          as: "itemDetails",
         },
       },
-      { $unwind: "$itemData" },
+      { $unwind: "$itemDetails" },
       {
-        $group: {
-          _id: "$itemData.name",
-          totalProduced: { $sum: "$quantityChanged" },
+        $project: {
+          name: "$itemDetails.name",
+          sku: "$itemDetails.sku",
+          totalIssued: 1,
+          issueFrequency: 1,
         },
       },
-      { $sort: { totalProduced: -1 } },
     ]);
 
-    res.status(200).json({ success: true, data: production });
-  } catch (error) {
-    next(error);
-  }
-};
+    const fastMoving = movementVelocity.slice(0, 5); // Top 5
+    const slowMoving = movementVelocity.slice(-5).reverse(); // Bottom 5
 
-// @desc    Get general stock additions vs deductions
-// @route   GET /api/analytics/stock-movement
-// @access  Private (Admin/Manager)
-exports.getStockMovementMetrics = async (req, res, next) => {
-  try {
-    const companyId = req.companyId;
+    // 3. Historical Stock Movement Trends (Last 7 Days Activity)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const movement = await Transaction.aggregate([
-      { $match: { companyId } },
+    const historicalTrends = await Transaction.aggregate([
       {
-        $lookup: {
-          from: "items",
-          localField: "itemId",
-          foreignField: "_id",
-          as: "itemData",
+        $match: {
+          createdAt: { $gte: sevenDaysAgo },
         },
       },
-      { $unwind: "$itemData" },
       {
         $group: {
-          _id: "$itemData.name",
-          added: {
-            $sum: {
-              $cond: [
-                { $in: ["$type", ["addition", "scrap_return"]] },
-                "$quantityChanged",
-                0,
-              ],
-            },
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
           },
-          deducted: {
-            $sum: {
-              $cond: [
-                { $in: ["$type", ["deduction", "shop_consumption"]] },
-                "$quantityChanged",
-                0,
-              ],
-            },
-          },
+          totalMovements: { $sum: 1 },
+          volumeHandled: { $sum: "$quantityChanged" },
         },
       },
-      { $sort: { added: -1 } },
-      { $limit: 10 },
+      { $sort: { _id: 1 } },
     ]);
 
-    res.status(200).json({ success: true, data: movement });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get inventory consumption trends and velocity
-// @route   GET /api/analytics/trends
-// @access  Private (Admin/Manager)
-exports.getInventoryTrends = async (req, res, next) => {
-  try {
-    const companyId = req.companyId;
-    const { days = 30 } = req.query;
-
-    const parsedDays = parseInt(days, 10);
-    if (isNaN(parsedDays) || parsedDays <= 0) {
-      throw new AppError("Days parameter must be a positive number", 400);
-    }
-
-    const dateLimit = new Date();
-    dateLimit.setDate(dateLimit.getDate() - parsedDays);
-
-    const transactions = await Transaction.find({
-      companyId,
-      createdAt: { $gte: dateLimit },
-      type: { $in: ["deduction", "shop_consumption", "scrap_return"] },
-    })
-      .populate("itemId", "name sku baseUnit")
-      .lean();
-
-    const velocityMap = {};
-
-    transactions.forEach((txn) => {
-      if (!txn.itemId) return;
-
-      const itemId = txn.itemId._id.toString();
-
-      if (!velocityMap[itemId]) {
-        velocityMap[itemId] = {
-          item: txn.itemId,
-          totalConsumed: 0,
-          transactionCount: 0,
-        };
-      }
-
-      velocityMap[itemId].totalConsumed += txn.quantityChanged;
-      velocityMap[itemId].transactionCount += 1;
+    res.status(200).json({
+      status: "success",
+      data: {
+        overview: {
+          totalStockVolume: totalStock,
+          activeLocations:
+            stockAggregations.length > 0
+              ? stockAggregations[0].uniqueLocationsActive.length
+              : 0,
+        },
+        velocity: {
+          fastMoving,
+          slowMoving,
+        },
+        trends: historicalTrends,
+      },
     });
-
-    const trends = Object.values(velocityMap).map((data) => ({
-      item: data.item,
-      metrics: {
-        totalConsumed: data.totalConsumed,
-        averageDailyConsumption: parseFloat(
-          (data.totalConsumed / parsedDays).toFixed(2),
-        ),
-        transactionCount: data.transactionCount,
-      },
-    }));
-
-    trends.sort((a, b) => b.metrics.totalConsumed - a.metrics.totalConsumed);
-
-    res
-      .status(200)
-      .json({ success: true, periodDays: parsedDays, data: trends });
   } catch (error) {
     next(error);
   }

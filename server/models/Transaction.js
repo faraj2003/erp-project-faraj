@@ -1,83 +1,50 @@
-// server/models/Transaction.js
 const mongoose = require("mongoose");
-const crypto = require("crypto");
 
 const transactionSchema = new mongoose.Schema(
   {
-    // PRD-INV-017: Unique alphanumeric transaction identifier
     transactionId: {
       type: String,
-      unique: true,
-      index: true,
-    },
-    // PRD-INV-037: Scope every transaction to its owning company
-    companyId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
       required: true,
-      index: true,
+      unique: true,
     },
-    itemId: {
+    actionType: {
+      type: String,
+      enum: ["Receipt", "Issue", "Transfer", "Adjustment"], // From your workflow diagram
+      required: true,
+    },
+    item: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",
       required: true,
-      index: true,
     },
-    orderId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
-      default: null,
-    },
-    type: {
-      type: String,
-      enum: [
-        "addition",
-        "deduction",
-        "transfer",
-        "adjustment",
-        "shop_consumption",
-        "scrap_return",
-      ],
-      required: true,
-    },
-    sourceLocationId: {
+    sourceLocation: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
-      default: null,
+      // Required for Issues and Transfers, null for Receipts
     },
-    destinationLocationId: {
+    destinationLocation: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
-      default: null,
+      // Required for Receipts and Transfers, null for Issues
     },
     quantityChanged: {
       type: Number,
       required: true,
     },
-    newStockLevel: {
-      type: Number,
-      default: null,
-    },
-    performedBy: {
+    batchNumber: String,
+    user: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "User", // To track who made the movement
       required: true,
     },
+    referenceDraft: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Adjustment", // Links to the Maker-Checker adjustment draft if applicable
+    },
   },
-  { timestamps: true },
+  {
+    timestamps: { createdAt: true, updatedAt: false }, // Immutable: no updates allowed
+  },
 );
-
-// ── NEW FEATURE (PRD-INV-017): Automated Transaction ID Generation ──
-// FIX: Removed 'next' callback for synchronous Mongoose 8 hooks
-transactionSchema.pre("save", function () {
-  if (!this.transactionId) {
-    // Generate an ID based on the current date + 6 random hex characters
-    // Example output: TXN-20260406-8F2A1C
-    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const randomStr = crypto.randomBytes(3).toString("hex").toUpperCase();
-
-    this.transactionId = `TXN-${datePrefix}-${randomStr}`;
-  }
-});
 
 module.exports = mongoose.model("Transaction", transactionSchema);
