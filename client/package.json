@@ -14,10 +14,9 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
-    "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-query": "^5.56.0",
+    "@tailwindcss/vite": "^4.2.1",
     "axios": "^1.13.6",
-    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.53.0",
@@ -47,3 +46,4 @@
     "vitest": "^2.0.5"
   }
 }
+

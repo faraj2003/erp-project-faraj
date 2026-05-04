@@ -1,35 +1,42 @@
+// server/models/StockBalance.js
 const mongoose = require("mongoose");
 
 const stockBalanceSchema = new mongoose.Schema(
   {
-    item: {
+    // PRD-INV-037: Scope every balance record to its owning company
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
+    itemId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Item",
       required: true,
+      index: true,
     },
-    location: {
+    locationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
       required: true,
+      index: true,
     },
-    // Batch tracking for FIFO/Expiry
-    batchNumber: {
-      type: String,
-      default: "N/A",
-    },
-    expiryDate: Date,
+    zoneName: { type: String, default: "Default" },
+    rackName: { type: String, default: "Default" },
     quantity: {
       type: Number,
       required: true,
-      min: [0, "Stock cannot drop below zero. Immediate rejection triggered."], // Crucial safety constraint
+      default: 0,
+      min: 0,
     },
   },
   { timestamps: true },
 );
 
-// Ensure an item in a specific location with a specific batch is uniquely indexed
+// Unique balance per company + item + location + zone + rack
 stockBalanceSchema.index(
-  { item: 1, location: 1, batchNumber: 1 },
+  { companyId: 1, itemId: 1, locationId: 1, zoneName: 1, rackName: 1 },
   { unique: true },
 );
 

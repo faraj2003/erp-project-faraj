@@ -1,40 +1,64 @@
+// server/models/Unit.js
 const mongoose = require("mongoose");
 
 const unitSchema = new mongoose.Schema(
   {
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       required: true,
-      unique: true,
+      lowercase: true,
       trim: true,
-      // e.g., "Pallet", "Box of 12", "Drum"
     },
     abbreviation: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
-      uppercase: true,
-      // e.g., "PLT", "BX12", "DRM"
     },
-    baseUnit: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
-      // The standard unit it converts to, e.g., "pcs", "kg", "ml"
-    },
-    conversionRate: {
-      type: Number,
-      required: true,
-      min: [0.00001, "Conversion rate must be greater than zero."],
-      // e.g., If 1 Pallet = 500 pcs, conversionRate is 500
-    },
-    description: {
-      type: String,
+    // PRD-INV-013: Flag to indicate if this is a system-protected unit
+    isCore: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true },
 );
+
+// Ensure unique unit names per company
+unitSchema.index({ companyId: 1, name: 1 }, { unique: true });
+
+// PRD-INV-013: Middleware to PREVENT DELETION of core units
+unitSchema.pre("findOneAndDelete", async function () {
+  const doc = await this.model.findOne(this.getQuery());
+  if (doc && doc.isCore) {
+    throw new Error(
+      "PRD-INV-013 Violation: Cannot delete a core system measurement unit.",
+    );
+  }
+});
+
+// PRD-INV-013: Middleware to PREVENT MODIFICATION of core units
+unitSchema.pre("findOneAndUpdate", async function () {
+  const doc = await this.model.findOne(this.getQuery());
+  if (doc && doc.isCore) {
+    const update = this.getUpdate();
+    // Prevent changing the fundamental identity of a core unit
+    if (
+      update.name ||
+      update.abbreviation ||
+      update.$set?.name ||
+      update.$set?.abbreviation
+    ) {
+      throw new Error(
+        "PRD-INV-013 Violation: Cannot modify the name or abbreviation of a core system measurement unit.",
+      );
+    }
+  }
+});
 
 module.exports = mongoose.model("Unit", unitSchema);

@@ -1,61 +1,105 @@
+// server/routes/inventoryRoutes.js
 const express = require("express");
 const router = express.Router();
-const inventoryController = require("../controllers/inventoryController");
 const { protect, authorize } = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
+const {
+  getDashboardMetrics,
+  getItems,
+  createItem,
+  updateItem,
+  archiveItem,
+  deleteItem,
+  addStock,
+  issueStock,
+  transferStock,
+  getLowStockItems,
+  getAdjustments,
+  createAdjustment,
+  reviewAdjustment,
+  uploadItemImage,
+  exportTransactionsCSV,
+  exportItemsCSV, // <-- New
+  exportAdjustmentsCSV, // <-- New
+} = require("../controllers/inventoryController");
 
 router.use(protect);
 
-// BARCODE SCANNER
+// --- Base Routes ---
+router
+  .route("/")
+  .get(getItems)
+  .post(authorize("admin", "manager", "procurement_manager"), createItem);
+
+// ── IMPORTANT: All named sub-routes MUST be registered before /:id ──
+
+// Dashboard Data Route (PRD-INV-001 & 002)
+router.get("/dashboard", authorize("admin", "manager"), getDashboardMetrics);
+
+// Low-stock alert route (PRD-INV-001)
+router.get("/low-stock", getLowStockItems);
+
+// Export Routes (PRD-INV-040) - Ensure complete data portability
 router.get(
-  "/scan/:sku",
-  authorize("staff", "manager", "admin"),
-  inventoryController.scanItem,
+  "/export/transactions",
+  authorize("admin", "manager"),
+  exportTransactionsCSV,
+);
+router.get(
+  "/export/items",
+  authorize("admin", "manager", "procurement_manager"),
+  exportItemsCSV,
+);
+router.get(
+  "/export/adjustments",
+  authorize("admin", "manager", "inventory_controller"),
+  exportAdjustmentsCSV,
 );
 
-// MOVEMENTS
+// Adjustment Workflow Routes (PRD-INV-020 to 024)
+router
+  .route("/adjustments")
+  .get(authorize("admin", "manager"), getAdjustments)
+  .post(
+    authorize("admin", "manager", "dispatch_manager", "shop_worker"),
+    createAdjustment,
+  );
+
+router.patch("/adjustments/:id/review", authorize("admin"), reviewAdjustment);
+
+// --- Item Management Routes ---
+router
+  .route("/:id")
+  .put(authorize("admin", "manager"), updateItem)
+  .delete(authorize("admin"), deleteItem);
+
+router.patch("/:id/archive", authorize("admin", "manager"), archiveItem);
+
+// PRD-INV-005/006: Multimedia asset upload for an item
 router.post(
-  "/receive",
-  authorize("staff", "manager", "admin"),
-  inventoryController.receiveStock,
-);
-router.post(
-  "/issue",
-  authorize("staff", "manager", "admin"),
-  inventoryController.issueStock,
-);
-router.post(
-  "/transfer",
-  authorize("staff", "manager", "admin"),
-  inventoryController.transferStock,
+  "/:id/image",
+  authorize("admin", "manager"),
+  upload.single("image"),
+  uploadItemImage,
 );
 
-// ADJUSTMENTS
+// --- Stock Movement Routes ---
 router.post(
-  "/adjustments",
-  authorize("staff", "manager", "admin"),
-  inventoryController.submitAdjustmentDraft,
-);
-router.patch(
-  "/adjustments/:adjustmentId/approve",
-  authorize("manager", "admin"),
-  inventoryController.approveAdjustment,
-);
-router.patch(
-  "/adjustments/:adjustmentId/reject",
-  authorize("manager", "admin"),
-  inventoryController.rejectAdjustment,
+  "/:id/stock",
+  authorize("admin", "manager", "procurement_manager"),
+  addStock,
 );
 
-// AUDITS & RETURNS
 router.post(
-  "/returns",
-  authorize("staff", "manager", "admin"),
-  inventoryController.processReturn,
+  "/:id/issue",
+  authorize("admin", "manager", "dispatch_manager", "shop_worker"),
+  issueStock,
 );
+
 router.post(
-  "/cycle-count",
-  authorize("manager", "admin"),
-  inventoryController.logCycleCount,
+  "/:id/transfer",
+  authorize("admin", "manager", "dispatch_manager"),
+  transferStock,
 );
 
 module.exports = router;
