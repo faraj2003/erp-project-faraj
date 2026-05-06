@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/upload");
+const { getInventoryAlerts } = require("../controllers/inventoryController");
 const {
   getDashboardMetrics,
   getItems,
@@ -19,10 +20,22 @@ const {
   reviewAdjustment,
   uploadItemImage,
   exportTransactionsCSV,
-  exportItemsCSV, // <-- New
-  exportAdjustmentsCSV, // <-- New
+  exportItemsCSV,
+  exportAdjustmentsCSV,
 } = require("../controllers/inventoryController");
+const {
+  getCycleCounts,
+  createCycleCount,
+  updateCount,
+  completeCycleCount,
+} = require("../controllers/cycleCountController");
+const {
+  getBOMs,
+  createBOM,
+  assembleBOM,
+} = require("../controllers/bomController");
 
+// Protect ALL routes in this file
 router.use(protect);
 
 // --- Base Routes ---
@@ -33,13 +46,19 @@ router
 
 // ── IMPORTANT: All named sub-routes MUST be registered before /:id ──
 
-// Dashboard Data Route (PRD-INV-001 & 002)
+// Dashboard Data Route
 router.get("/dashboard", authorize("admin", "manager"), getDashboardMetrics);
 
-// Low-stock alert route (PRD-INV-001)
+// Alerts & Low-stock routes
 router.get("/low-stock", getLowStockItems);
+router.get("/alerts", getInventoryAlerts); // <-- Fixed and moved up!
 
-// Export Routes (PRD-INV-040) - Ensure complete data portability
+// --- Bill of Materials (BOM) & Kitting ---
+router.get("/boms", getBOMs); // <-- Moved up!
+router.post("/boms", createBOM); // <-- Moved up!
+router.post("/boms/:id/assemble", assembleBOM); // <-- Moved up!
+
+// Export Routes
 router.get(
   "/export/transactions",
   authorize("admin", "manager"),
@@ -56,7 +75,7 @@ router.get(
   exportAdjustmentsCSV,
 );
 
-// Adjustment Workflow Routes (PRD-INV-020 to 024)
+// Adjustment Workflow Routes
 router
   .route("/adjustments")
   .get(authorize("admin", "manager"), getAdjustments)
@@ -67,6 +86,14 @@ router
 
 router.patch("/adjustments/:id/review", authorize("admin"), reviewAdjustment);
 
+// --- Cycle Counting & Audits ---
+router.get("/cycle-counts", getCycleCounts);
+router.post("/cycle-counts", createCycleCount);
+router.put("/cycle-counts/:id/count", updateCount);
+router.post("/cycle-counts/:id/complete", completeCycleCount);
+
+// ── EVERYTHING BELOW HERE USES /:id ──
+
 // --- Item Management Routes ---
 router
   .route("/:id")
@@ -75,7 +102,7 @@ router
 
 router.patch("/:id/archive", authorize("admin", "manager"), archiveItem);
 
-// PRD-INV-005/006: Multimedia asset upload for an item
+// Multimedia asset upload for an item
 router.post(
   "/:id/image",
   authorize("admin", "manager"),

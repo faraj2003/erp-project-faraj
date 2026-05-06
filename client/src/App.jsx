@@ -17,6 +17,8 @@ import Procurement from './pages/Procurement';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
 import {useSocketStore} from './store/socketStore'; // ✅ make sure this exists
+import CycleCounts from './pages/CycleCounts';
+import Bom from './pages/BOM';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +63,8 @@ function App() {
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
+              <Route path="/inventory/cycle-counts" element={<CycleCounts />} />
+              <Route path="/inventory/boms" element={<Bom />} />
               <Route path="/adjustments" element={<Adjustments />} />
               <Route path="/orders" element={<Orders />} />
               <Route path="/procurement" element={<Procurement />} />

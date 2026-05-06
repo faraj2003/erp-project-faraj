@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
+import BarcodeScanner from '../components/BarcodeScanner'; // ✅ Imported Scanner
 
 export default function Inventory() {
   const queryClient = useQueryClient();
@@ -17,7 +18,11 @@ export default function Inventory() {
   const [selectedItemForIssue, setSelectedItemForIssue] = useState(null);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
-  const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '', unit: '' });
+  // ✅ Scanner States
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannedItem, setScannedItem] = useState(null);
+
+  const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' });
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
   const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
@@ -61,6 +66,18 @@ export default function Inventory() {
     },
   });
 
+  // --- Scanner Handler ---
+  const handleScanSuccess = (decodedSku) => {
+    setIsScannerOpen(false); // Close camera
+    const foundItem = items.find(item => item.sku.toLowerCase() === decodedSku.toLowerCase());
+    
+    if (foundItem) {
+      setScannedItem(foundItem); // Open quick-action modal
+    } else {
+      alert(`SKU not found in system: ${decodedSku}`);
+    }
+  };
+
   const addItemMutation = useMutation({
     mutationFn: async (payload) => axios.post('/api/inventory', payload),
     onSuccess: () => {
@@ -82,7 +99,7 @@ export default function Inventory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setSelectedItemForStock(null);
-      setAddStockForm({ locationId: '', quantityToAdd: '', unit: '' });
+      setAddStockForm({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' });
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to receive stock.")
   });
@@ -160,10 +177,10 @@ export default function Inventory() {
   const handleAddStockSubmit = (e) => {
     e.preventDefault();
     if (!addStockForm.locationId || !addStockForm.quantityToAdd) return;
-    addStockMutation.mutate({ 
-      id: selectedItemForStock._id, 
-      payload: { ...addStockForm, quantityToAdd: Number(addStockForm.quantityToAdd) } 
-    });
+    const payload = { ...addStockForm, quantityToAdd: Number(addStockForm.quantityToAdd) };
+    if (!payload.batchNumber) delete payload.batchNumber;
+    if (!payload.expiryDate) delete payload.expiryDate;
+    addStockMutation.mutate({ id: selectedItemForStock._id, payload });
   };
 
   const handleTransferSubmit = (e) => {
@@ -198,22 +215,31 @@ export default function Inventory() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+      {/* --- HEADER & ACTIONS --- */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <button 
+            onClick={() => setIsScannerOpen(true)} 
+            className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-medium shadow-sm flex items-center gap-2 transition-colors"
+          >
+            <span className="text-lg">📷</span> Scan SKU
+          </button>
+          
           {canCreateItem && (
             <button onClick={handleExportItems} className="bg-gray-100 text-gray-800 border border-gray-300 px-4 py-2 rounded hover:bg-gray-200 font-medium shadow-sm transition-colors">
-              📥 Export Catalog
+              📥 Export
             </button>
           )}
           {canCreateItem && (
             <button onClick={() => setIsAddItemModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors">
-              + Add New Product
+              + New Product
             </button>
           )}
         </div>
       </div>
 
+      {/* --- INVENTORY LIST --- */}
       <div className="grid grid-cols-1 gap-6">
         {items?.map((item) => (
           <div key={item._id} className="bg-white p-6 rounded shadow border border-gray-200">
@@ -251,25 +277,31 @@ export default function Inventory() {
                     </p>
                   );
                 })()}
-
-                {item.stockEquivalents && Object.entries(item.stockEquivalents).map(([uName, uVal]) => (
-                  <p key={uName} className="text-sm text-gray-500 font-medium mt-1">
-                    ≈ {uVal} {uName}
-                  </p>
-                ))}
               </div>
             </div>
 
             <div className="mt-4 bg-gray-50 p-4 rounded border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location (Base Units):</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location & Batch:</h3>
               {item.balances?.length > 0 ? (
                 <ul className="space-y-2">
                   {item.balances.map((balance) => (
-                    <li key={balance._id} className="flex justify-between text-sm bg-white p-2 rounded border border-gray-200 shadow-sm">
-                      <span className="text-gray-700 font-medium">{balance.locationId?.name || 'Unknown'} <span className="text-xs text-gray-400 font-normal">({balance.locationId?.type})</span></span>
-                      <div className="text-right">
-                         <span className="font-bold text-gray-800 block">{balance.quantity} {item.baseUnit}</span>
+                    <li key={balance._id} className="flex justify-between items-center text-sm bg-white p-3 rounded border border-gray-200 shadow-sm">
+                      <div>
+                        <span className="text-gray-800 font-bold">{balance.locationId?.name || 'Unknown'}</span>
+                        {balance.batchNumber && balance.batchNumber !== 'DEFAULT-BATCH' && (
+                          <div className="flex gap-2 mt-1.5">
+                            <span className="bg-gray-100 text-gray-600 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border border-gray-200">
+                              Lot: {balance.batchNumber}
+                            </span>
+                            {balance.expiryDate && (
+                              <span className="bg-red-50 text-red-600 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border border-red-100">
+                                Exp: {new Date(balance.expiryDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
+                      <span className="font-bold text-gray-800 text-lg">{balance.quantity} <span className="text-sm font-normal text-gray-500">{item.baseUnit}</span></span>
                     </li>
                   ))}
                 </ul>
@@ -278,9 +310,9 @@ export default function Inventory() {
               )}
             </div>
 
-            <div className="mt-4 flex gap-3">
+            <div className="mt-4 flex flex-wrap gap-3">
               {canReceive && (
-                <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit});}} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
+                <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit, batchNumber: '', expiryDate: ''});}} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
                   + Receive Stock
                 </button>
               )}
@@ -298,6 +330,65 @@ export default function Inventory() {
           </div>
         ))}
       </div>
+
+      {/* --- SCANNED ITEM QUICK-ACTION MODAL --- */}
+      {scannedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border-t-4 border-indigo-600">
+            <div className="text-center mb-6">
+              <span className="text-4xl inline-block mb-2">📦</span>
+              <h2 className="text-2xl font-bold text-gray-800">{scannedItem.name}</h2>
+              <p className="text-sm font-mono text-gray-500 mt-1">{scannedItem.sku}</p>
+            </div>
+            
+            <p className="text-center text-sm text-gray-600 mb-6 border-b pb-6">
+              Current Global Stock: <strong className="text-gray-800">{scannedItem.currentStock} {scannedItem.baseUnit}</strong>
+            </p>
+
+            <div className="flex flex-col gap-3">
+              {canReceive && (
+                <button 
+                  onClick={() => {
+                    setScannedItem(null);
+                    setSelectedItemForStock(scannedItem);
+                    setAddStockForm({...addStockForm, unit: scannedItem.baseUnit, batchNumber: '', expiryDate: ''});
+                  }} 
+                  className="bg-gray-100 text-gray-800 font-bold py-3 rounded hover:bg-gray-200"
+                >
+                  + Receive Stock
+                </button>
+              )}
+              {canIssue && scannedItem.balances?.length > 0 && (
+                <button 
+                  onClick={() => {
+                    setScannedItem(null);
+                    setSelectedItemForIssue(scannedItem);
+                    setIssueForm({...issueForm, unit: scannedItem.baseUnit});
+                  }} 
+                  className="bg-red-50 text-red-700 font-bold py-3 rounded hover:bg-red-100 border border-red-200"
+                >
+                  - Issue Stock
+                </button>
+              )}
+              {canTransfer && scannedItem.balances?.length > 0 && (
+                <button 
+                  onClick={() => {
+                    setScannedItem(null);
+                    setSelectedItemForTransfer(scannedItem);
+                    setTransferForm({...transferForm, unit: scannedItem.baseUnit});
+                  }} 
+                  className="bg-blue-50 text-blue-700 font-bold py-3 rounded hover:bg-blue-100 border border-blue-200"
+                >
+                  ⇄ Transfer Stock
+                </button>
+              )}
+            </div>
+            <button onClick={() => setScannedItem(null)} className="mt-6 w-full text-center text-gray-500 hover:text-gray-800 font-medium">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* --- ADD NEW PRODUCT MODAL --- */}
       {isAddItemModalOpen && (
@@ -399,7 +490,6 @@ export default function Inventory() {
                   </select>
                 </div>
 
-                {/* ── SECONDARY UNIT: UPDATED TO FREE TEXT FIELD ── */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Secondary Unit (Optional)</label>
@@ -450,6 +540,18 @@ export default function Inventory() {
                   {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
                 </select>
               </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Batch / Lot No.</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2" placeholder="Optional" value={addStockForm.batchNumber} onChange={(e) => setAddStockForm({ ...addStockForm, batchNumber: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Expiry Date</label>
+                  <input type="date" className="w-full border border-gray-300 rounded p-2" value={addStockForm.expiryDate} onChange={(e) => setAddStockForm({ ...addStockForm, expiryDate: e.target.value })} />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium mb-1">Quantity</label>
@@ -463,7 +565,7 @@ export default function Inventory() {
                 </div>
               </div>
               <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setSelectedItemForStock(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="button" onClick={() => { setSelectedItemForStock(null); setAddStockForm({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' }); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                 <button type="submit" disabled={addStockMutation.isLoading} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-900">Confirm Receipt</button>
               </div>
             </form>
@@ -476,14 +578,17 @@ export default function Inventory() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-red-600">
             <h2 className="text-xl font-bold mb-4">Issue Stock: {selectedItemForIssue.name}</h2>
+            <div className="bg-red-50 text-red-700 text-xs p-3 rounded mb-4 border border-red-200">
+              <span className="font-bold uppercase tracking-wider">Note:</span> Stock will be automatically deducted using FIFO.
+            </div>
             <form onSubmit={handleIssueSubmit}>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-1">Source Location</label>
                 <select className="w-full border border-gray-300 rounded p-2" value={issueForm.locationId} onChange={(e) => setIssueForm({ ...issueForm, locationId: e.target.value })} required>
                   <option value="">-- Select a Location --</option>
                   {selectedItemForIssue.balances.map(b => (
-                    <option key={b.locationId._id} value={b.locationId._id}>
-                      {b.locationId.name} (Avail: {b.quantity} {selectedItemForIssue.baseUnit})
+                    <option key={b._id} value={b.locationId._id}>
+                      {b.locationId.name} {b.batchNumber !== 'DEFAULT-BATCH' ? `[Lot: ${b.batchNumber}] ` : ''}(Avail: {b.quantity} {selectedItemForIssue.baseUnit})
                     </option>
                   ))}
                 </select>
@@ -520,8 +625,8 @@ export default function Inventory() {
                 <select className="w-full border border-gray-300 rounded p-2" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
                   <option value="">-- Select Source --</option>
                   {selectedItemForTransfer.balances.map(b => (
-                    <option key={b.locationId._id} value={b.locationId._id}>
-                      {b.locationId.name} (Avail: {b.quantity} {selectedItemForTransfer.baseUnit})
+                    <option key={b._id} value={b.locationId._id}>
+                      {b.locationId.name} {b.batchNumber !== 'DEFAULT-BATCH' ? `[Lot: ${b.batchNumber}] ` : ''}(Avail: {b.quantity} {selectedItemForTransfer.baseUnit})
                     </option>
                   ))}
                 </select>
@@ -552,6 +657,14 @@ export default function Inventory() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* --- RENDER THE SCANNER COMPONENT --- */}
+      {isScannerOpen && (
+        <BarcodeScanner 
+          onScanSuccess={handleScanSuccess} 
+          onClose={() => setIsScannerOpen(false)} 
+        />
       )}
     </div>
   );

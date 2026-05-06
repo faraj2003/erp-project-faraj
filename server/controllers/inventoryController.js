@@ -235,7 +235,14 @@ exports.deleteItem = async (req, res, next) => {
 // @route   POST /api/inventory/:id/stock
 exports.addStock = async (req, res, next) => {
   try {
-    const { locationId, quantityToAdd, unit } = req.body;
+    const {
+      locationId,
+      quantityToAdd,
+      unit,
+      batchNumber = "DEFAULT-BATCH",
+      expiryDate = null,
+    } = req.body;
+
     const itemId = req.params.id;
     const companyId = req.companyId;
     const rawQty = Number(quantityToAdd);
@@ -266,6 +273,7 @@ exports.addStock = async (req, res, next) => {
       locationId,
       zoneName: "Default",
       rackName: "Default",
+      batchNumber, // Scope balance search to the specific batch
     });
 
     if (balance) {
@@ -277,6 +285,8 @@ exports.addStock = async (req, res, next) => {
         itemId,
         locationId,
         quantity: baseQtyToAdd,
+        batchNumber,
+        expiryDate,
       });
     }
 
@@ -287,6 +297,8 @@ exports.addStock = async (req, res, next) => {
       destinationLocationId: locationId,
       quantityChanged: baseQtyToAdd,
       newStockLevel: balance.quantity,
+      batchNumber,
+      expiryDate,
       performedBy: req.user._id,
     });
 
@@ -300,7 +312,7 @@ exports.addStock = async (req, res, next) => {
   }
 };
 
-// @desc    Issue (deduct) stock
+// @desc    Issue (deduct) stock using FIFO
 // @route   POST /api/inventory/:id/issue
 exports.issueStock = async (req, res, next) => {
   try {
@@ -329,41 +341,63 @@ exports.issueStock = async (req, res, next) => {
 
     const baseQtyToIssue = rawQty * multiplier;
 
-    const balance = await StockBalance.findOne({
+    // 1. Fetch all balances for this item at this location, sorted by Expiry Date then Creation Date (FIFO/FEFO)
+    const balances = await StockBalance.find({
       companyId,
       itemId,
       locationId,
       zoneName: "Default",
       rackName: "Default",
-    });
+      quantity: { $gt: 0 }, // Only grab batches with stock
+    }).sort({ expiryDate: 1, createdAt: 1 });
 
-    if (!balance || balance.quantity < baseQtyToIssue) {
+    const totalAvailableStock = balances.reduce(
+      (sum, b) => sum + b.quantity,
+      0,
+    );
+
+    if (totalAvailableStock < baseQtyToIssue) {
       return res.status(400).json({
         message:
           "PRD-INV-015 Violation: Cannot issue materials exceeding available local stock.",
       });
     }
 
-    balance.quantity -= baseQtyToIssue;
-    await balance.save();
+    let remainingToIssue = baseQtyToIssue;
 
-    await Transaction.create({
-      companyId,
-      itemId,
-      type: "deduction",
-      sourceLocationId: locationId,
-      quantityChanged: baseQtyToIssue,
-      newStockLevel: balance.quantity,
-      performedBy: req.user._id,
-    });
+    // 2. Iterate through batches to deduct stock (FIFO processing)
+    for (const balance of balances) {
+      if (remainingToIssue <= 0) break;
 
-    res.status(200).json({ message: "Stock issued successfully", balance });
+      const deductQty = Math.min(balance.quantity, remainingToIssue);
+
+      balance.quantity -= deductQty;
+      remainingToIssue -= deductQty;
+      await balance.save();
+
+      // Log a transaction specifically for this batch
+      await Transaction.create({
+        companyId,
+        itemId,
+        type: "deduction",
+        sourceLocationId: locationId,
+        quantityChanged: deductQty,
+        newStockLevel: balance.quantity,
+        batchNumber: balance.batchNumber,
+        expiryDate: balance.expiryDate,
+        performedBy: req.user._id,
+      });
+    }
+
+    res
+      .status(200)
+      .json({ message: "Stock issued successfully using FIFO routing." });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Transfer stock between locations
+// @desc    Transfer stock between locations using FIFO
 // @route   POST /api/inventory/:id/transfer
 exports.transferStock = async (req, res, next) => {
   try {
@@ -397,55 +431,83 @@ exports.transferStock = async (req, res, next) => {
 
     const baseTransferQty = rawQty * multiplier;
 
-    const sourceBalance = await StockBalance.findOne({
+    // 1. Find source balances, sorted by FIFO
+    const sourceBalances = await StockBalance.find({
       companyId,
       itemId,
       locationId: sourceLocationId,
       zoneName: "Default",
       rackName: "Default",
-    });
+      quantity: { $gt: 0 },
+    }).sort({ expiryDate: 1, createdAt: 1 });
 
-    if (!sourceBalance || sourceBalance.quantity < baseTransferQty) {
+    const totalAvailableSourceStock = sourceBalances.reduce(
+      (sum, b) => sum + b.quantity,
+      0,
+    );
+
+    if (totalAvailableSourceStock < baseTransferQty) {
       return res
         .status(400)
         .json({ message: "Insufficient stock at the source location" });
     }
 
-    sourceBalance.quantity -= baseTransferQty;
-    await sourceBalance.save();
+    let remainingToTransfer = baseTransferQty;
 
-    let destBalance = await StockBalance.findOne({
-      companyId,
-      itemId,
-      locationId: destinationLocationId,
-      zoneName: "Default",
-      rackName: "Default",
-    });
+    // 2. Iterate and transfer batch by batch
+    for (const sourceBal of sourceBalances) {
+      if (remainingToTransfer <= 0) break;
 
-    if (destBalance) {
-      destBalance.quantity += baseTransferQty;
-      await destBalance.save();
-    } else {
-      destBalance = await StockBalance.create({
+      const transferQty = Math.min(sourceBal.quantity, remainingToTransfer);
+
+      // Deduct from source
+      sourceBal.quantity -= transferQty;
+      remainingToTransfer -= transferQty;
+      await sourceBal.save();
+
+      // Find or create matching batch at the destination
+      let destBal = await StockBalance.findOne({
         companyId,
         itemId,
         locationId: destinationLocationId,
-        quantity: baseTransferQty,
+        zoneName: "Default",
+        rackName: "Default",
+        batchNumber: sourceBal.batchNumber, // Ensure we map to the exact same batch
+      });
+
+      if (destBal) {
+        destBal.quantity += transferQty;
+        await destBal.save();
+      } else {
+        destBal = await StockBalance.create({
+          companyId,
+          itemId,
+          locationId: destinationLocationId,
+          quantity: transferQty,
+          batchNumber: sourceBal.batchNumber,
+          expiryDate: sourceBal.expiryDate,
+        });
+      }
+
+      await Transaction.create({
+        companyId,
+        itemId,
+        type: "transfer",
+        sourceLocationId,
+        destinationLocationId,
+        quantityChanged: transferQty,
+        newStockLevel: destBal.quantity,
+        batchNumber: sourceBal.batchNumber,
+        expiryDate: sourceBal.expiryDate,
+        performedBy: req.user._id,
       });
     }
 
-    await Transaction.create({
-      companyId,
-      itemId,
-      type: "transfer",
-      sourceLocationId,
-      destinationLocationId,
-      quantityChanged: baseTransferQty,
-      newStockLevel: destBalance.quantity,
-      performedBy: req.user._id,
-    });
-
-    res.status(200).json({ message: "Stock transferred successfully" });
+    res
+      .status(200)
+      .json({
+        message: "Stock transferred successfully maintaining batch lineage.",
+      });
   } catch (error) {
     next(error);
   }
@@ -653,6 +715,72 @@ exports.uploadItemImage = async (req, res, next) => {
   }
 };
 
+// @desc    Get Multi-Tiered Stock Alerts
+// @route   GET /api/inventory/alerts
+exports.getInventoryAlerts = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+
+    // 1. Fetch all active items and balances scoped to this company
+    const items = await Item.find({ companyId, isArchived: false })
+      .select("name sku baseUnit alertLevels")
+      .lean();
+    const balances = await StockBalance.find({ companyId }).lean();
+
+    const alerts = [];
+
+    // 2. Compare aggregated stock against item thresholds
+    items.forEach((item) => {
+      // Calculate total base stock for this specific item across all locations
+      const itemBalances = balances.filter(
+        (b) => b.itemId.toString() === item._id.toString(),
+      );
+      const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
+
+      if (item.alertLevels) {
+        const { orange, red, critical } = item.alertLevels;
+        let alertLevel = null;
+
+        // Check thresholds strictly (Critical is most severe)
+        if (totalStock <= critical) {
+          alertLevel = "Critical";
+        } else if (totalStock <= red) {
+          alertLevel = "Red";
+        } else if (totalStock <= orange) {
+          alertLevel = "Orange";
+        }
+
+        // If an alert is triggered, push to array
+        if (alertLevel) {
+          alerts.push({
+            itemId: item._id,
+            sku: item.sku,
+            name: item.name,
+            baseUnit: item.baseUnit,
+            currentStock: totalStock,
+            alertLevel: alertLevel,
+            thresholds: item.alertLevels,
+          });
+        }
+      }
+    });
+
+    // 3. Sort alerts by severity (Critical first, then Red, then Orange)
+    const severityRank = { Critical: 1, Red: 2, Orange: 3 };
+    alerts.sort(
+      (a, b) => severityRank[a.alertLevel] - severityRank[b.alertLevel],
+    );
+
+    res.status(200).json({
+      success: true,
+      count: alerts.length,
+      data: alerts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── EXPORT ENDPOINTS ──
 
 exports.exportTransactionsCSV = async (req, res, next) => {
@@ -668,7 +796,7 @@ exports.exportTransactionsCSV = async (req, res, next) => {
       .lean();
 
     let csv =
-      "Transaction ID,Date,Type,Item SKU,Item Name,Quantity Changed,New Stock Level,Source Location,Destination Location,Performed By\n";
+      "Transaction ID,Date,Type,Item SKU,Item Name,Quantity Changed,New Stock Level,Source Location,Destination Location,Batch Number,Performed By\n";
 
     const escape = (str) => {
       if (str === null || str === undefined) return "";
@@ -681,9 +809,10 @@ exports.exportTransactionsCSV = async (req, res, next) => {
       const itemName = txn.itemId?.name || "";
       const source = txn.sourceLocationId?.name || "";
       const dest = txn.destinationLocationId?.name || "";
+      const batch = txn.batchNumber || "";
       const user = txn.performedBy?.name || "";
 
-      csv += `${txn.transactionId || txn._id},${date},${txn.type},${escape(sku)},${escape(itemName)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(source)},${escape(dest)},${escape(user)}\n`;
+      csv += `${txn.transactionId || txn._id},${date},${txn.type},${escape(sku)},${escape(itemName)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(source)},${escape(dest)},${escape(batch)},${escape(user)}\n`;
     });
 
     res.setHeader("Content-Type", "text/csv");

@@ -24,6 +24,20 @@ const navItems = [
     icon: '📦',
     roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
   },
+  // ✅ ADDED CYCLE COUNTS HERE
+  {
+    label: 'Cycle Counts',
+    path: '/inventory/cycle-counts',
+    icon: '📋',
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
+  },
+  // ✅ ADDED BOM / KITTING HERE
+  {
+    label: 'Manufacturing (BOM)',
+    path: '/inventory/boms',
+    icon: '🛠️',
+    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
+  },
   {
     label: 'Adjustments',
     path: '/adjustments',
@@ -36,16 +50,14 @@ const navItems = [
     icon: '🏭',
     roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'],
   },
-
   {
     label: 'Procurement',
     path: '/procurement',
     icon: '🚚',
     roles: ['admin', 'manager', 'procurement_manager'],
   },
-  
   {
-    label: 'Locations', // <-- RESTORED LOCATIONS BUTTON
+    label: 'Locations', 
     path: '/locations',
     icon: '🏢',
     roles: ['manager', 'admin'],
@@ -105,7 +117,7 @@ const AppShell = () => {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {visibleNav.map((item) => (
             <NavLink
               key={item.path}

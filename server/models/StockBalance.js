@@ -24,6 +24,18 @@ const stockBalanceSchema = new mongoose.Schema(
     },
     zoneName: { type: String, default: "Default" },
     rackName: { type: String, default: "Default" },
+
+    // --- NEW: Batch & Lot Traceability ---
+    batchNumber: {
+      type: String,
+      default: "DEFAULT-BATCH",
+      trim: true,
+    },
+    expiryDate: {
+      type: Date,
+      default: null,
+    },
+
     quantity: {
       type: Number,
       required: true,
@@ -34,9 +46,16 @@ const stockBalanceSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Unique balance per company + item + location + zone + rack
+// Updated Index: Unique balance per company + item + location + zone + rack + batchNumber
 stockBalanceSchema.index(
-  { companyId: 1, itemId: 1, locationId: 1, zoneName: 1, rackName: 1 },
+  {
+    companyId: 1,
+    itemId: 1,
+    locationId: 1,
+    zoneName: 1,
+    rackName: 1,
+    batchNumber: 1,
+  },
   { unique: true },
 );
 

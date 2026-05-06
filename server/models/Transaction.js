@@ -28,6 +28,17 @@ const transactionSchema = new mongoose.Schema(
       ref: "Order",
       default: null,
     },
+
+    // --- NEW: Batch Traceability on Transactions ---
+    batchNumber: {
+      type: String,
+      default: "DEFAULT-BATCH",
+    },
+    expiryDate: {
+      type: Date,
+      default: null,
+    },
+
     type: {
       type: String,
       enum: [
@@ -67,8 +78,7 @@ const transactionSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// ── NEW FEATURE (PRD-INV-017): Automated Transaction ID Generation ──
-// FIX: Removed 'next' callback for synchronous Mongoose 8 hooks
+// ── Automated Transaction ID Generation ──
 transactionSchema.pre("save", function () {
   if (!this.transactionId) {
     // Generate an ID based on the current date + 6 random hex characters

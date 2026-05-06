@@ -33,6 +33,12 @@ const fetchDashboardMetrics = async () => {
   return data.data;
 };
 
+// New Fetcher for Multi-Tiered Alerts
+const fetchInventoryAlerts = async () => {
+  const { data } = await api.get('/api/inventory/alerts');
+  return data.data;
+};
+
 // Fetch full inventory for Lookups
 const fetchFullInventory = async () => {
   const { data } = await api.get('/api/inventory');
@@ -139,6 +145,9 @@ const Dashboard = () => {
   const { data: stockMovement = [], isLoading: loadingMovement, isError: errorMovement } = useQuery({ queryKey: ['analytics', 'stock-movement'], queryFn: fetchStockMovement, enabled: isAdmin() });
   const { data: dashboardMetrics = {} } = useQuery({ queryKey: ['inventory', 'dashboard'], queryFn: fetchDashboardMetrics, enabled: isAdmin() });
   
+  // New Query for Alerts
+  const { data: alerts = [], isLoading: loadingAlerts, isError: errorAlerts } = useQuery({ queryKey: ['inventory', 'alerts'], queryFn: fetchInventoryAlerts, enabled: isAdmin() });
+
   // Full inventory for Lookup features
   const { data: inventory = [] } = useQuery({ queryKey: ['inventory', 'full'], queryFn: fetchFullInventory, enabled: isAdmin() });
 
@@ -224,13 +233,52 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Alerts */}
-      {dashboardMetrics.lowStockAlerts > 0 && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-red-800">Requires Attention: Low Stock Detected</h3>
-          <p className="text-xs text-red-600 mt-1">{dashboardMetrics.lowStockAlerts} item(s) have dropped below their threshold.</p>
+      {/* ── MULTI-TIERED STOCK ALERTS ── */}
+      {loadingAlerts ? (
+        <div className="mb-6 p-5 border border-gray-200 rounded-xl shadow-sm text-center text-gray-500 animate-pulse">
+          Checking stock levels...
         </div>
-      )}
+      ) : errorAlerts ? (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-red-800">Failed to load stock alerts</h3>
+        </div>
+      ) : alerts.length > 0 ? (
+        <div className="mb-6 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xl">⚠️</span>
+            <h3 className="text-base font-bold text-gray-800">Requires Attention: Low Stock Detected</h3>
+            <span className="ml-2 bg-red-100 text-red-700 py-0.5 px-2 rounded-full text-xs font-bold">{alerts.length} Items</span>
+          </div>
+          <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+            {alerts.map((alert) => {
+              // Determine styles based on severity
+              let colorClasses = "";
+              if (alert.alertLevel === 'Critical') colorClasses = "bg-red-100 border-red-300 text-red-900";
+              else if (alert.alertLevel === 'Red') colorClasses = "bg-rose-50 border-rose-200 text-rose-800";
+              else colorClasses = "bg-orange-50 border-orange-200 text-orange-800";
+
+              return (
+                <div key={alert.itemId} className={`p-3 rounded-lg border flex justify-between items-center ${colorClasses}`}>
+                  <div>
+                    <p className="font-bold text-sm">{alert.name} <span className="font-mono text-xs opacity-75 ml-1">({alert.sku})</span></p>
+                    <p className="text-xs mt-0.5 opacity-90">
+                      Threshold setting: {alert.thresholds[alert.alertLevel.toLowerCase()]} {alert.baseUnit}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-extrabold uppercase tracking-wider mb-0.5 opacity-80">
+                      {alert.alertLevel} ALERT
+                    </div>
+                    <p className="text-lg font-black">
+                      {alert.currentStock} <span className="text-sm font-medium opacity-75">{alert.baseUnit}</span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Stats */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -258,7 +306,6 @@ const Dashboard = () => {
         </ChartCard>
 
         <ChartCard>
-          {/* Req 3: Renamed to Material Usage Rate */}
           <SectionTitle title="Material Usage Rate (30 Days)" subtitle="Fastest moving materials" />
           {loadingTrends ? <LoadingChart /> : errorTrends ? <ErrorChart /> : trends.length === 0 ? <EmptyChart message="No data yet" /> : (
             <ResponsiveContainer width="100%" height={260}>
