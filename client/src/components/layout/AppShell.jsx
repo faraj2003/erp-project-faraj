@@ -16,39 +16,37 @@ const navItems = [
     label: 'Dashboard',
     path: '/dashboard',
     icon: '📊',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager','procurement_manager'],
+    roles: ['staff', 'manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
   },
   {
     label: 'Inventory',
     path: '/inventory',
     icon: '📦',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
+    roles: ['staff', 'manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
   },
-  // ✅ ADDED CYCLE COUNTS HERE
   {
     label: 'Cycle Counts',
     path: '/inventory/cycle-counts',
     icon: '📋',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
+    roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'procurement_manager'],
   },
-  // ✅ ADDED BOM / KITTING HERE
   {
     label: 'Manufacturing (BOM)',
     path: '/inventory/boms',
     icon: '🛠️',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
+    roles: ['manager', 'admin', 'shop_manager', 'shop_worker'],
   },
   {
     label: 'Adjustments',
     path: '/adjustments',
     icon: '📝',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'], 
+    roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager'], 
   },
   {
     label: 'Orders',
     path: '/orders',
     icon: '🏭',
-    roles: ['staff', 'manager', 'admin', 'shop_worker', 'dispatch_manager'],
+    roles: ['staff', 'manager', 'admin', 'shop_manager', 'dispatch_manager'],
   },
   {
     label: 'Procurement',
