@@ -3,7 +3,8 @@ const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/upload");
-const { getInventoryAlerts } = require("../controllers/inventoryController");
+
+// Destructure all controllers, including the new getTransactions
 const {
   getDashboardMetrics,
   getItems,
@@ -15,20 +16,24 @@ const {
   issueStock,
   transferStock,
   getLowStockItems,
+  getInventoryAlerts,
   getAdjustments,
   createAdjustment,
   reviewAdjustment,
   uploadItemImage,
+  getTransactions, // <-- NEW LEDGER FUNCTION IMPORTED
   exportTransactionsCSV,
   exportItemsCSV,
   exportAdjustmentsCSV,
 } = require("../controllers/inventoryController");
+
 const {
   getCycleCounts,
   createCycleCount,
   updateCount,
   completeCycleCount,
 } = require("../controllers/cycleCountController");
+
 const {
   getBOMs,
   createBOM,
@@ -51,12 +56,19 @@ router.get("/dashboard", authorize("admin", "manager"), getDashboardMetrics);
 
 // Alerts & Low-stock routes
 router.get("/low-stock", getLowStockItems);
-router.get("/alerts", getInventoryAlerts); // <-- Fixed and moved up!
+router.get("/alerts", getInventoryAlerts);
 
 // --- Bill of Materials (BOM) & Kitting ---
-router.get("/boms", getBOMs); // <-- Moved up!
-router.post("/boms", createBOM); // <-- Moved up!
-router.post("/boms/:id/assemble", assembleBOM); // <-- Moved up!
+router.get("/boms", getBOMs);
+router.post("/boms", createBOM);
+router.post("/boms/:id/assemble", assembleBOM);
+
+// --- INVENTORY LEDGER ROUTE (TASK 1) ---
+router.get(
+  "/transactions",
+  authorize("admin", "manager", "inventory_controller"),
+  getTransactions,
+);
 
 // Export Routes
 router.get(

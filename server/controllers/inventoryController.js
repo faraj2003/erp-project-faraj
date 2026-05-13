@@ -503,11 +503,9 @@ exports.transferStock = async (req, res, next) => {
       });
     }
 
-    res
-      .status(200)
-      .json({
-        message: "Stock transferred successfully maintaining batch lineage.",
-      });
+    res.status(200).json({
+      message: "Stock transferred successfully maintaining batch lineage.",
+    });
   } catch (error) {
     next(error);
   }
@@ -775,6 +773,48 @@ exports.getInventoryAlerts = async (req, res, next) => {
       success: true,
       count: alerts.length,
       data: alerts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all inventory transactions (The Inventory Ledger)
+// @route   GET /api/inventory/transactions
+exports.getTransactions = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const { type, itemId, startDate, endDate, limit } = req.query;
+
+    // Build the query object based on filters
+    const query = { companyId };
+
+    if (type) query.type = type;
+    if (itemId) query.itemId = itemId;
+
+    // Date range filtering
+    if (startDate && endDate) {
+      query.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
+    const queryLimit = limit ? parseInt(limit) : 0;
+
+    const transactions = await Transaction.find(query)
+      .populate("itemId", "name sku baseUnit")
+      .populate("performedBy", "name email")
+      .populate("sourceLocationId", "name")
+      .populate("destinationLocationId", "name")
+      .sort({ createdAt: -1 }) // Newest transactions first
+      .limit(queryLimit)
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: transactions.length,
+      data: transactions,
     });
   } catch (error) {
     next(error);

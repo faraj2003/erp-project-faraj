@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
 import BarcodeScanner from '../components/BarcodeScanner'; // ✅ Imported Scanner
+import TransactionLedger from '../components/TransactionLedger';
 
 export default function Inventory() {
   const queryClient = useQueryClient();
@@ -98,6 +99,7 @@ export default function Inventory() {
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/stock`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       setSelectedItemForStock(null);
       setAddStockForm({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' });
     },
@@ -108,6 +110,7 @@ export default function Inventory() {
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/transfer`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       setSelectedItemForTransfer(null);
       setTransferForm({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
     },
@@ -118,6 +121,7 @@ export default function Inventory() {
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/issue`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       setSelectedItemForIssue(null);
       setIssueForm({ locationId: '', quantityToIssue: '', unit: '' });
     },
@@ -329,6 +333,11 @@ export default function Inventory() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* --- TRANSACTION LEDGER --- */}
+      <div className="mt-12">
+        <TransactionLedger />
       </div>
 
       {/* --- SCANNED ITEM QUICK-ACTION MODAL --- */}
