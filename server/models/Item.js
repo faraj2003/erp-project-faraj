@@ -15,7 +15,30 @@ const secondaryUnitSchema = new mongoose.Schema(
       min: 0.0001,
     },
   },
-  { _id: false }, // No need to create _id for subdocuments
+  { _id: false },
+);
+
+// NEW: Multi-supplier schema with price history
+const supplierPricingSchema = new mongoose.Schema(
+  {
+    supplierId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Supplier",
+      required: true,
+    },
+    baseRate: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    history: [
+      {
+        rate: { type: Number, required: true },
+        date: { type: Date, default: Date.now },
+      },
+    ],
+  },
+  { _id: false },
 );
 
 const itemSchema = new mongoose.Schema(
@@ -50,10 +73,11 @@ const itemSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // UPDATED: Removed the rigid enum to allow dynamic types from the frontend/system
     type: {
       type: String,
-      enum: ["raw_material", "finished_good"],
       required: true,
+      trim: true,
     },
     description: {
       type: String,
@@ -88,10 +112,12 @@ const itemSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+
+    // UPDATED: Split dimensions into length, breadth, and height (in meters)
     dimensions: {
-      type: String,
-      trim: true,
-      default: "",
+      length: { type: Number, default: 0, min: 0 },
+      breadth: { type: Number, default: 0, min: 0 },
+      height: { type: Number, default: 0, min: 0 },
     },
 
     // --- SPRINT 2: SMART PROCUREMENT LINKS ---
@@ -100,9 +126,13 @@ const itemSchema = new mongoose.Schema(
       ref: "Supplier",
       default: null,
     },
+
+    // NEW: Array to support multiple suppliers and base rate history
+    suppliers: [supplierPricingSchema],
+
     reorderQuantity: {
       type: Number,
-      default: 100, // Default batch size the system will auto-order
+      default: 100,
       min: 1,
     },
 

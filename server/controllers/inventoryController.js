@@ -5,8 +5,6 @@ const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
 const Adjustment = require("../models/Adjustment");
 
-const VALID_TYPES = ["raw_material", "finished_good"];
-
 // Helper function to calculate multiplier based on requested unit
 const getMultiplier = (item, requestedUnit) => {
   if (
@@ -21,14 +19,57 @@ const getMultiplier = (item, requestedUnit) => {
   return secUnit ? secUnit.multiplierToBase : null;
 };
 
+// HELPER: Generate location-scoped query based on user role (Covers Warehouses & Shops)
+const getLocationScope = (user, type = "balance") => {
+  // Define roles that have GLOBAL visibility across all warehouses and shops
+  const globalRoles = ["admin", "manager", "procurement_manager"];
+
+  // If the user is global, return an empty query (they see everything)
+  if (globalRoles.includes(user.role)) return {};
+
+  // For everyone else (Warehouse Managers, Shop Staff, Dispatchers),
+  // they MUST be locked to their assigned locationId.
+  if (!user.locationId) {
+    throw new Error(
+      "Access Denied: No facility/warehouse assigned to this account.",
+    );
+  }
+
+  // Transactions need to check both source and destination
+  if (type === "transaction") {
+    return {
+      $or: [
+        { sourceLocationId: user.locationId },
+        { destinationLocationId: user.locationId },
+      ],
+    };
+  }
+
+  // Balances and Adjustments check a single locationId
+  return { locationId: user.locationId };
+};
+
 // @desc    Get aggregated dashboard metrics
 // @route   GET /api/inventory/dashboard
 exports.getDashboardMetrics = async (req, res, next) => {
   try {
     const companyId = req.companyId;
 
+    let balanceScope, transactionScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+      transactionScope = getLocationScope(req.user, "transaction");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
     const items = await Item.find({ companyId, isArchived: false }).lean();
-    const balances = await StockBalance.find({ companyId }).lean();
+
+    // Scoped Balances
+    const balances = await StockBalance.find({
+      companyId,
+      ...balanceScope,
+    }).lean();
 
     let totalValuation = 0;
     let lowStockCount = 0;
@@ -50,9 +91,11 @@ exports.getDashboardMetrics = async (req, res, next) => {
       }
     });
 
+    // Scoped Adjustments
     const pendingAdjustments = await Adjustment.find({
       companyId,
       status: "pending",
+      ...balanceScope,
     })
       .populate("itemId", "name sku baseUnit")
       .populate("locationId", "name")
@@ -60,7 +103,11 @@ exports.getDashboardMetrics = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const recentTransactions = await Transaction.find({ companyId })
+    // Scoped Transactions
+    const recentTransactions = await Transaction.find({
+      companyId,
+      ...transactionScope,
+    })
       .populate("itemId", "name sku")
       .populate("performedBy", "name")
       .populate("sourceLocationId", "name")
@@ -92,14 +139,9 @@ exports.getItems = async (req, res, next) => {
     const { type, search } = req.query;
     const companyId = req.companyId;
 
-    if (type && !VALID_TYPES.includes(type)) {
-      return res.status(400).json({
-        message: `Invalid type filter. Must be one of: ${VALID_TYPES.join(", ")}`,
-      });
-    }
-
     const query = { companyId, isArchived: false };
-    if (type) query.type = type;
+    if (type) query.type = type; // Dynamic type checking
+
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -109,7 +151,15 @@ exports.getItems = async (req, res, next) => {
 
     const items = await Item.find(query).populate("categoryId", "name").lean();
 
-    const balances = await StockBalance.find({ companyId })
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
+    // Only fetch balances for the permitted locations
+    const balances = await StockBalance.find({ companyId, ...balanceScope })
       .populate("locationId", "name type")
       .lean();
 
@@ -153,6 +203,7 @@ exports.getItems = async (req, res, next) => {
 // @route   POST /api/inventory
 exports.createItem = async (req, res, next) => {
   try {
+    // req.body will now accept dimensions object and suppliers array smoothly
     const item = await Item.create({ ...req.body, companyId: req.companyId });
     res.status(201).json({ success: true, data: item });
   } catch (error) {
@@ -253,6 +304,20 @@ exports.addStock = async (req, res, next) => {
         .json({ message: "Valid Location and positive quantity required" });
     }
 
+    // Role check: Ensure restricted users don't add stock to other locations
+    const globalRoles = ["admin", "manager", "procurement_manager"];
+    if (
+      !globalRoles.includes(req.user.role) &&
+      req.user.locationId?.toString() !== locationId.toString()
+    ) {
+      return res
+        .status(403)
+        .json({
+          message:
+            "Security Violation: You can only perform actions for your assigned warehouse/location.",
+        });
+    }
+
     const item = await Item.findOne({ _id: itemId, companyId }).lean();
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
@@ -273,7 +338,7 @@ exports.addStock = async (req, res, next) => {
       locationId,
       zoneName: "Default",
       rackName: "Default",
-      batchNumber, // Scope balance search to the specific batch
+      batchNumber,
     });
 
     if (balance) {
@@ -327,6 +392,20 @@ exports.issueStock = async (req, res, next) => {
         .json({ message: "Valid Location and positive quantity required" });
     }
 
+    // Role check
+    const globalRoles = ["admin", "manager", "procurement_manager"];
+    if (
+      !globalRoles.includes(req.user.role) &&
+      req.user.locationId?.toString() !== locationId.toString()
+    ) {
+      return res
+        .status(403)
+        .json({
+          message:
+            "Security Violation: You can only perform actions for your assigned warehouse/location.",
+        });
+    }
+
     const item = await Item.findOne({ _id: itemId, companyId }).lean();
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
@@ -341,14 +420,13 @@ exports.issueStock = async (req, res, next) => {
 
     const baseQtyToIssue = rawQty * multiplier;
 
-    // 1. Fetch all balances for this item at this location, sorted by Expiry Date then Creation Date (FIFO/FEFO)
     const balances = await StockBalance.find({
       companyId,
       itemId,
       locationId,
       zoneName: "Default",
       rackName: "Default",
-      quantity: { $gt: 0 }, // Only grab batches with stock
+      quantity: { $gt: 0 },
     }).sort({ expiryDate: 1, createdAt: 1 });
 
     const totalAvailableStock = balances.reduce(
@@ -365,7 +443,6 @@ exports.issueStock = async (req, res, next) => {
 
     let remainingToIssue = baseQtyToIssue;
 
-    // 2. Iterate through batches to deduct stock (FIFO processing)
     for (const balance of balances) {
       if (remainingToIssue <= 0) break;
 
@@ -375,7 +452,6 @@ exports.issueStock = async (req, res, next) => {
       remainingToIssue -= deductQty;
       await balance.save();
 
-      // Log a transaction specifically for this batch
       await Transaction.create({
         companyId,
         itemId,
@@ -417,6 +493,20 @@ exports.transferStock = async (req, res, next) => {
         .json({ message: "Source and destination cannot be the same" });
     }
 
+    // Role Check: Restricted staff can only transfer FROM their own location
+    const globalRoles = ["admin", "manager", "procurement_manager"];
+    if (
+      !globalRoles.includes(req.user.role) &&
+      req.user.locationId?.toString() !== sourceLocationId.toString()
+    ) {
+      return res
+        .status(403)
+        .json({
+          message:
+            "Security Violation: You can only perform actions for your assigned warehouse/location.",
+        });
+    }
+
     const item = await Item.findOne({ _id: itemId, companyId }).lean();
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
@@ -431,7 +521,6 @@ exports.transferStock = async (req, res, next) => {
 
     const baseTransferQty = rawQty * multiplier;
 
-    // 1. Find source balances, sorted by FIFO
     const sourceBalances = await StockBalance.find({
       companyId,
       itemId,
@@ -454,25 +543,22 @@ exports.transferStock = async (req, res, next) => {
 
     let remainingToTransfer = baseTransferQty;
 
-    // 2. Iterate and transfer batch by batch
     for (const sourceBal of sourceBalances) {
       if (remainingToTransfer <= 0) break;
 
       const transferQty = Math.min(sourceBal.quantity, remainingToTransfer);
 
-      // Deduct from source
       sourceBal.quantity -= transferQty;
       remainingToTransfer -= transferQty;
       await sourceBal.save();
 
-      // Find or create matching batch at the destination
       let destBal = await StockBalance.findOne({
         companyId,
         itemId,
         locationId: destinationLocationId,
         zoneName: "Default",
         rackName: "Default",
-        batchNumber: sourceBal.batchNumber, // Ensure we map to the exact same batch
+        batchNumber: sourceBal.batchNumber,
       });
 
       if (destBal) {
@@ -503,9 +589,11 @@ exports.transferStock = async (req, res, next) => {
       });
     }
 
-    res.status(200).json({
-      message: "Stock transferred successfully maintaining batch lineage.",
-    });
+    res
+      .status(200)
+      .json({
+        message: "Stock transferred successfully maintaining batch lineage.",
+      });
   } catch (error) {
     next(error);
   }
@@ -515,7 +603,17 @@ exports.transferStock = async (req, res, next) => {
 // @route   GET /api/inventory/adjustments
 exports.getAdjustments = async (req, res, next) => {
   try {
-    const adjustments = await Adjustment.find({ companyId: req.companyId })
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
+    const adjustments = await Adjustment.find({
+      companyId: req.companyId,
+      ...balanceScope,
+    })
       .populate("itemId", "name sku baseUnit")
       .populate("locationId", "name")
       .populate("requestedBy", "name")
@@ -539,6 +637,19 @@ exports.createAdjustment = async (req, res, next) => {
       return res
         .status(400)
         .json({ message: "Missing required fields for adjustment" });
+    }
+
+    const globalRoles = ["admin", "manager", "procurement_manager"];
+    if (
+      !globalRoles.includes(req.user.role) &&
+      req.user.locationId?.toString() !== locationId.toString()
+    ) {
+      return res
+        .status(403)
+        .json({
+          message:
+            "Security Violation: You can only perform actions for your assigned warehouse/location.",
+        });
     }
 
     const status = submitForReview ? "pending" : "draft";
@@ -624,9 +735,11 @@ exports.reviewAdjustment = async (req, res, next) => {
       });
     } else {
       if (balance.quantity + adjustment.quantityChange < 0) {
-        return res.status(400).json({
-          message: "Cannot approve: Insufficient stock for this deduction.",
-        });
+        return res
+          .status(400)
+          .json({
+            message: "Cannot approve: Insufficient stock for this deduction.",
+          });
       }
       balance.quantity += adjustment.quantityChange;
       await balance.save();
@@ -644,11 +757,13 @@ exports.reviewAdjustment = async (req, res, next) => {
       performedBy: req.user._id,
     });
 
-    res.status(200).json({
-      message: "Adjustment approved and stock updated",
-      adjustment,
-      balance,
-    });
+    res
+      .status(200)
+      .json({
+        message: "Adjustment approved and stock updated",
+        adjustment,
+        balance,
+      });
   } catch (error) {
     next(error);
   }
@@ -659,8 +774,18 @@ exports.reviewAdjustment = async (req, res, next) => {
 exports.getLowStockItems = async (req, res, next) => {
   try {
     const companyId = req.companyId;
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
     const items = await Item.find({ companyId, isArchived: false }).lean();
-    const balances = await StockBalance.find({ companyId }).lean();
+    const balances = await StockBalance.find({
+      companyId,
+      ...balanceScope,
+    }).lean();
 
     const lowStockItems = items
       .map((item) => {
@@ -694,7 +819,6 @@ exports.uploadItemImage = async (req, res, next) => {
       _id: req.params.id,
       companyId: req.companyId,
     });
-
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
     }
@@ -703,11 +827,9 @@ exports.uploadItemImage = async (req, res, next) => {
     item.imageUrl = imageUrl;
     await item.save();
 
-    res.status(200).json({
-      message: "Image uploaded successfully",
-      imageUrl,
-      item,
-    });
+    res
+      .status(200)
+      .json({ message: "Image uploaded successfully", imageUrl, item });
   } catch (error) {
     next(error);
   }
@@ -719,17 +841,24 @@ exports.getInventoryAlerts = async (req, res, next) => {
   try {
     const companyId = req.companyId;
 
-    // 1. Fetch all active items and balances scoped to this company
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
     const items = await Item.find({ companyId, isArchived: false })
       .select("name sku baseUnit alertLevels")
       .lean();
-    const balances = await StockBalance.find({ companyId }).lean();
+    const balances = await StockBalance.find({
+      companyId,
+      ...balanceScope,
+    }).lean();
 
     const alerts = [];
 
-    // 2. Compare aggregated stock against item thresholds
     items.forEach((item) => {
-      // Calculate total base stock for this specific item across all locations
       const itemBalances = balances.filter(
         (b) => b.itemId.toString() === item._id.toString(),
       );
@@ -739,16 +868,10 @@ exports.getInventoryAlerts = async (req, res, next) => {
         const { orange, red, critical } = item.alertLevels;
         let alertLevel = null;
 
-        // Check thresholds strictly (Critical is most severe)
-        if (totalStock <= critical) {
-          alertLevel = "Critical";
-        } else if (totalStock <= red) {
-          alertLevel = "Red";
-        } else if (totalStock <= orange) {
-          alertLevel = "Orange";
-        }
+        if (totalStock <= critical) alertLevel = "Critical";
+        else if (totalStock <= red) alertLevel = "Red";
+        else if (totalStock <= orange) alertLevel = "Orange";
 
-        // If an alert is triggered, push to array
         if (alertLevel) {
           alerts.push({
             itemId: item._id,
@@ -763,17 +886,12 @@ exports.getInventoryAlerts = async (req, res, next) => {
       }
     });
 
-    // 3. Sort alerts by severity (Critical first, then Red, then Orange)
     const severityRank = { Critical: 1, Red: 2, Orange: 3 };
     alerts.sort(
       (a, b) => severityRank[a.alertLevel] - severityRank[b.alertLevel],
     );
 
-    res.status(200).json({
-      success: true,
-      count: alerts.length,
-      data: alerts,
-    });
+    res.status(200).json({ success: true, count: alerts.length, data: alerts });
   } catch (error) {
     next(error);
   }
@@ -786,13 +904,18 @@ exports.getTransactions = async (req, res, next) => {
     const companyId = req.companyId;
     const { type, itemId, startDate, endDate, limit } = req.query;
 
-    // Build the query object based on filters
-    const query = { companyId };
+    let transactionScope;
+    try {
+      transactionScope = getLocationScope(req.user, "transaction");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
+    const query = { companyId, ...transactionScope };
 
     if (type) query.type = type;
     if (itemId) query.itemId = itemId;
 
-    // Date range filtering
     if (startDate && endDate) {
       query.createdAt = {
         $gte: new Date(startDate),
@@ -807,15 +930,13 @@ exports.getTransactions = async (req, res, next) => {
       .populate("performedBy", "name email")
       .populate("sourceLocationId", "name")
       .populate("destinationLocationId", "name")
-      .sort({ createdAt: -1 }) // Newest transactions first
+      .sort({ createdAt: -1 })
       .limit(queryLimit)
       .lean();
 
-    res.status(200).json({
-      success: true,
-      count: transactions.length,
-      data: transactions,
-    });
+    res
+      .status(200)
+      .json({ success: true, count: transactions.length, data: transactions });
   } catch (error) {
     next(error);
   }
@@ -826,8 +947,17 @@ exports.getTransactions = async (req, res, next) => {
 exports.exportTransactionsCSV = async (req, res, next) => {
   try {
     const companyId = req.companyId;
+    let transactionScope;
+    try {
+      transactionScope = getLocationScope(req.user, "transaction");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
 
-    const transactions = await Transaction.find({ companyId })
+    const transactions = await Transaction.find({
+      companyId,
+      ...transactionScope,
+    })
       .populate("itemId", "sku name")
       .populate("performedBy", "name")
       .populate("sourceLocationId", "name")
@@ -845,14 +975,7 @@ exports.exportTransactionsCSV = async (req, res, next) => {
 
     transactions.forEach((txn) => {
       const date = txn.createdAt ? new Date(txn.createdAt).toISOString() : "";
-      const sku = txn.itemId?.sku || "";
-      const itemName = txn.itemId?.name || "";
-      const source = txn.sourceLocationId?.name || "";
-      const dest = txn.destinationLocationId?.name || "";
-      const batch = txn.batchNumber || "";
-      const user = txn.performedBy?.name || "";
-
-      csv += `${txn.transactionId || txn._id},${date},${txn.type},${escape(sku)},${escape(itemName)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(source)},${escape(dest)},${escape(batch)},${escape(user)}\n`;
+      csv += `${txn.transactionId || txn._id},${date},${txn.type},${escape(txn.itemId?.sku)},${escape(txn.itemId?.name)},${txn.quantityChanged},${txn.newStockLevel || ""},${escape(txn.sourceLocationId?.name)},${escape(txn.destinationLocationId?.name)},${escape(txn.batchNumber)},${escape(txn.performedBy?.name)}\n`;
     });
 
     res.setHeader("Content-Type", "text/csv");
@@ -860,7 +983,6 @@ exports.exportTransactionsCSV = async (req, res, next) => {
       "Content-Disposition",
       'attachment; filename="inventory-transactions.csv"',
     );
-
     res.status(200).send(csv);
   } catch (error) {
     next(error);
@@ -870,10 +992,17 @@ exports.exportTransactionsCSV = async (req, res, next) => {
 exports.exportItemsCSV = async (req, res, next) => {
   try {
     const companyId = req.companyId;
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
     const items = await Item.find({ companyId, isArchived: false })
       .populate("categoryId", "name")
       .lean();
-    const balances = await StockBalance.find({ companyId })
+    const balances = await StockBalance.find({ companyId, ...balanceScope })
       .populate("locationId", "name")
       .lean();
 
@@ -895,7 +1024,11 @@ exports.exportItemsCSV = async (req, res, next) => {
       );
       const totalValuation = totalStockBase * (item.valuePerUnit || 0);
 
-      csv += `${escape(item.sku)},${escape(item.productCompanyName)},${escape(item.name)},${item.type},${escape(item.categoryId?.name || "")},${escape(item.baseUnit)},${escape(item.dimensions)},${escape(item.shelfLife)},${item.alertLevels?.orange || 0},${item.alertLevels?.red || 0},${item.costPerUnit || 0},${totalStockBase},${totalValuation},${escape(item.supplier?.name)}\n`;
+      const dims = item.dimensions
+        ? `${item.dimensions.length}x${item.dimensions.breadth}x${item.dimensions.height}m`
+        : "";
+
+      csv += `${escape(item.sku)},${escape(item.productCompanyName)},${escape(item.name)},${item.type},${escape(item.categoryId?.name || "")},${escape(item.baseUnit)},${escape(dims)},${escape(item.shelfLife)},${item.alertLevels?.orange || 0},${item.alertLevels?.red || 0},${item.costPerUnit || 0},${totalStockBase},${totalValuation},${escape(item.defaultSupplier?.name || "")}\n`;
     });
 
     res.setHeader("Content-Type", "text/csv");
@@ -912,7 +1045,14 @@ exports.exportItemsCSV = async (req, res, next) => {
 exports.exportAdjustmentsCSV = async (req, res, next) => {
   try {
     const companyId = req.companyId;
-    const adjustments = await Adjustment.find({ companyId })
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
+    const adjustments = await Adjustment.find({ companyId, ...balanceScope })
       .populate("itemId", "sku name baseUnit")
       .populate("locationId", "name")
       .populate("requestedBy", "name")
@@ -930,14 +1070,7 @@ exports.exportAdjustmentsCSV = async (req, res, next) => {
 
     adjustments.forEach((adj) => {
       const date = adj.createdAt ? new Date(adj.createdAt).toISOString() : "";
-      const sku = adj.itemId?.sku || "";
-      const itemName = adj.itemId?.name || "";
-      const baseUnit = adj.itemId?.baseUnit || "";
-      const location = adj.locationId?.name || "";
-      const requestedBy = adj.requestedBy?.name || "";
-      const reviewedBy = adj.reviewedBy?.name || "";
-
-      csv += `${date},${escape(sku)},${escape(itemName)},${escape(location)},${adj.quantityChange},${escape(baseUnit)},${escape(adj.reason)},${adj.status},${escape(requestedBy)},${escape(reviewedBy)},${escape(adj.reviewNotes)}\n`;
+      csv += `${date},${escape(adj.itemId?.sku)},${escape(adj.itemId?.name)},${escape(adj.locationId?.name)},${adj.quantityChange},${escape(adj.itemId?.baseUnit)},${escape(adj.reason)},${adj.status},${escape(adj.requestedBy?.name)},${escape(adj.reviewedBy?.name)},${escape(adj.reviewNotes)}\n`;
     });
 
     res.setHeader("Content-Type", "text/csv");

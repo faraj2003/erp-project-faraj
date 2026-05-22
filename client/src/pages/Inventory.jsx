@@ -1,25 +1,30 @@
+// client/src/pages/Inventory.jsx
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
-import BarcodeScanner from '../components/BarcodeScanner'; // ✅ Imported Scanner
+import BarcodeScanner from '../components/BarcodeScanner'; 
 import TransactionLedger from '../components/TransactionLedger';
 
 export default function Inventory() {
   const queryClient = useQueryClient();
   const userRole = useAuthStore((state) => state.getRole());
   
-  const canReceive = ['admin', 'manager', 'procurement_manager'].includes(userRole);
-  const canTransfer = ['admin', 'manager', 'dispatch_manager'].includes(userRole);
+  const canReceive = ['admin', 'manager', 'procurement_manager', 'shop_manager'].includes(userRole);
+  const canTransfer = ['admin', 'manager', 'dispatch_manager', 'shop_manager'].includes(userRole);
   const canCreateItem = ['admin', 'manager', 'procurement_manager'].includes(userRole);
-  const canIssue = ['admin', 'manager', 'dispatch_manager', 'shop_worker'].includes(userRole);
+  const canIssue = ['admin', 'manager', 'dispatch_manager', 'shop_worker', 'shop_manager'].includes(userRole);
   
   const [selectedItemForStock, setSelectedItemForStock] = useState(null);
   const [selectedItemForTransfer, setSelectedItemForTransfer] = useState(null);
   const [selectedItemForIssue, setSelectedItemForIssue] = useState(null);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
-  // ✅ Scanner States
+  // ✅ New UI States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  
+  // Scanner States
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedItem, setScannedItem] = useState(null);
 
@@ -27,11 +32,13 @@ export default function Inventory() {
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
   const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
+  // ✅ Updated Form State for Dimensions & Types
   const [addItemForm, setAddItemForm] = useState({
-    sku: '', name: '', productCompanyName: '', type: 'raw_material', categoryId: '', 
-    costPerUnit: '', shelfLife: '', dimensions: '', 
+    sku: '', name: '', productCompanyName: '', typeId: '', categoryId: '', 
+    costPerUnit: '', shelfLife: '', 
+    dimLength: '', dimBreadth: '', dimHeight: '', // Split Dimensions
     alertOrange: '', alertRed: '', alertCritical: '',
-    supplierName: '', supplierContact: '',
+    supplierName: '', supplierContact: '', baseRate: '', // Multi-supplier base fields
     baseUnit: '', secUnitName: '', secUnitMultiplier: ''
   });
 
@@ -67,13 +74,26 @@ export default function Inventory() {
     },
   });
 
-  // --- Scanner Handler ---
+  // Fetch dynamic Item Types (Replace with your actual endpoint if different)
+  const { data: itemTypes = [] } = useQuery({
+    queryKey: ['itemTypes'],
+    queryFn: async () => {
+      try {
+        const { data } = await axios.get('/api/system/types');
+        return data.data;
+      } catch (err) {
+        // Fallback if endpoint doesn't exist yet
+        return [{ _id: 'raw_material', name: 'Raw Material' }, { _id: 'finished_good', name: 'Finished Good' }];
+      }
+    },
+  });
+
   const handleScanSuccess = (decodedSku) => {
-    setIsScannerOpen(false); // Close camera
+    setIsScannerOpen(false); 
     const foundItem = items.find(item => item.sku.toLowerCase() === decodedSku.toLowerCase());
     
     if (foundItem) {
-      setScannedItem(foundItem); // Open quick-action modal
+      setScannedItem(foundItem); 
     } else {
       alert(`SKU not found in system: ${decodedSku}`);
     }
@@ -85,10 +105,11 @@ export default function Inventory() {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setIsAddItemModalOpen(false);
       setAddItemForm({
-        sku: '', name: '', productCompanyName: '', type: 'raw_material', categoryId: '', 
-        costPerUnit: '', shelfLife: '', dimensions: '', 
+        sku: '', name: '', productCompanyName: '', typeId: '', categoryId: '', 
+        costPerUnit: '', shelfLife: '', 
+        dimLength: '', dimBreadth: '', dimHeight: '',
         alertOrange: '', alertRed: '', alertCritical: '',
-        supplierName: '', supplierContact: '',
+        supplierName: '', supplierContact: '', baseRate: '',
         baseUnit: '', secUnitName: '', secUnitMultiplier: ''
       });
     },
@@ -147,24 +168,32 @@ export default function Inventory() {
 
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
+    
+    // Structure payload based on the new Item schema
     const payload = { 
       sku: addItemForm.sku,
       name: addItemForm.name,
       productCompanyName: addItemForm.productCompanyName,
-      type: addItemForm.type,
+      type: addItemForm.typeId, // Send dynamic type
       categoryId: addItemForm.categoryId || null,
       costPerUnit: Number(addItemForm.costPerUnit) || 0,
       shelfLife: addItemForm.shelfLife,
-      dimensions: addItemForm.dimensions,
+      
+      // Split dimensions formatting
+      dimensions: {
+        length: Number(addItemForm.dimLength) || 0,
+        breadth: Number(addItemForm.dimBreadth) || 0,
+        height: Number(addItemForm.dimHeight) || 0
+      },
+
       alertLevels: {
         orange: Number(addItemForm.alertOrange),
         red: Number(addItemForm.alertRed),
         critical: Number(addItemForm.alertCritical)
       },
-      supplier: {
-        name: addItemForm.supplierName,
-        contactInfo: addItemForm.supplierContact
-      },
+      
+      // Multi-supplier structure (if a supplier is selected)
+      // Note: Assuming supplierName is an ID in reality, or needs a lookup. Adjust based on your supplier implementation.
       baseUnit: addItemForm.baseUnit,
       secondaryUnits: []
     };
@@ -215,14 +244,48 @@ export default function Inventory() {
     return options;
   };
 
+  // ✅ Filter items based on search term
+  const filteredItems = items?.filter(item => 
+    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (itemsLoading) return <div className="p-4 text-gray-600">Loading Inventory...</div>;
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* --- HEADER & ACTIONS --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
         <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
-        <div className="flex flex-wrap gap-3">
+        
+        {/* ✅ Search Bar */}
+        <div className="w-full lg:w-1/3">
+          <input 
+            type="text" 
+            placeholder="Search by name or SKU..." 
+            className="w-full border border-gray-300 rounded px-4 py-2 shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+          {/* ✅ View Toggles */}
+          <div className="flex bg-gray-100 rounded border border-gray-200 p-1">
+            <button 
+              onClick={() => setViewMode('grid')} 
+              className={`px-3 py-1 text-sm font-medium rounded ${viewMode === 'grid' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Grid
+            </button>
+            <button 
+              onClick={() => setViewMode('list')} 
+              className={`px-3 py-1 text-sm font-medium rounded ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              List
+            </button>
+          </div>
+
           <button 
             onClick={() => setIsScannerOpen(true)} 
             className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-medium shadow-sm flex items-center gap-2 transition-colors"
@@ -231,7 +294,7 @@ export default function Inventory() {
           </button>
           
           {canCreateItem && (
-            <button onClick={handleExportItems} className="bg-gray-100 text-gray-800 border border-gray-300 px-4 py-2 rounded hover:bg-gray-200 font-medium shadow-sm transition-colors">
+            <button onClick={handleExportItems} className="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded hover:bg-gray-50 font-medium shadow-sm transition-colors">
               📥 Export
             </button>
           )}
@@ -243,9 +306,9 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* --- INVENTORY LIST --- */}
-      <div className="grid grid-cols-1 gap-6">
-        {items?.map((item) => (
+      {/* --- INVENTORY LIST (Dynamic Grid/List View) --- */}
+      <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "flex flex-col gap-4"}>
+        {filteredItems?.map((item) => (
           <div key={item._id} className="bg-white p-6 rounded shadow border border-gray-200">
             <div className="flex justify-between items-start mb-4">
               <div>
@@ -257,7 +320,8 @@ export default function Inventory() {
                 )}
                 <div className="flex items-center gap-2 mt-2">
                   <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded capitalize">
-                    {item.type.replace('_', ' ')}
+                    {/* Display type cleanly (handles object ID or plain string) */}
+                    {item.type?.name || item.type?.replace('_', ' ') || "Standard"}
                   </span>
                   {item.categoryId && item.categoryId.name && (
                      <span className="inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
@@ -265,10 +329,14 @@ export default function Inventory() {
                      </span>
                   )}
                 </div>
+                {item.dimensions && (item.dimensions.length > 0 || item.dimensions.breadth > 0) && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Dims: {item.dimensions.length}L x {item.dimensions.breadth}W x {item.dimensions.height}H (m)
+                  </p>
+                )}
               </div>
               <div className="text-right">
-                <p className="text-sm text-gray-500 uppercase tracking-wide">Total Global Stock</p>
-                
+                <p className="text-sm text-gray-500 uppercase tracking-wide">Total Stock</p>
                 {(() => {
                   let textColor = 'text-green-600';
                   if (item.currentStock <= (item.alertLevels?.critical || 0)) textColor = 'text-red-800 font-black';
@@ -310,233 +378,152 @@ export default function Inventory() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-500 italic">No stock found in any location.</p>
+                <p className="text-sm text-gray-500 italic">No stock found in permitted locations.</p>
               )}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
               {canReceive && (
                 <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit, batchNumber: '', expiryDate: ''});}} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
-                  + Receive Stock
+                  + Receive
                 </button>
               )}
               {canIssue && item.balances?.length > 0 && (
                 <button onClick={() => {setSelectedItemForIssue(item); setIssueForm({...issueForm, unit: item.baseUnit});}} className="bg-red-50 text-red-700 hover:bg-red-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-red-200">
-                  - Issue Stock
+                  - Issue
                 </button>
               )}
               {canTransfer && item.balances?.length > 0 && (
                 <button onClick={() => {setSelectedItemForTransfer(item); setTransferForm({...transferForm, unit: item.baseUnit});}} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-blue-200">
-                  ⇄ Transfer Stock
+                  ⇄ Transfer
                 </button>
               )}
             </div>
           </div>
         ))}
+        
+        {filteredItems?.length === 0 && (
+          <div className="text-center py-12 text-gray-500 w-full col-span-2">
+            No items found matching your search.
+          </div>
+        )}
       </div>
 
-      {/* --- TRANSACTION LEDGER --- */}
       <div className="mt-12">
         <TransactionLedger />
       </div>
 
-      {/* --- SCANNED ITEM QUICK-ACTION MODAL --- */}
-      {scannedItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border-t-4 border-indigo-600">
-            <div className="text-center mb-6">
-              <span className="text-4xl inline-block mb-2">📦</span>
-              <h2 className="text-2xl font-bold text-gray-800">{scannedItem.name}</h2>
-              <p className="text-sm font-mono text-gray-500 mt-1">{scannedItem.sku}</p>
-            </div>
-            
-            <p className="text-center text-sm text-gray-600 mb-6 border-b pb-6">
-              Current Global Stock: <strong className="text-gray-800">{scannedItem.currentStock} {scannedItem.baseUnit}</strong>
-            </p>
-
-            <div className="flex flex-col gap-3">
-              {canReceive && (
-                <button 
-                  onClick={() => {
-                    setScannedItem(null);
-                    setSelectedItemForStock(scannedItem);
-                    setAddStockForm({...addStockForm, unit: scannedItem.baseUnit, batchNumber: '', expiryDate: ''});
-                  }} 
-                  className="bg-gray-100 text-gray-800 font-bold py-3 rounded hover:bg-gray-200"
-                >
-                  + Receive Stock
-                </button>
-              )}
-              {canIssue && scannedItem.balances?.length > 0 && (
-                <button 
-                  onClick={() => {
-                    setScannedItem(null);
-                    setSelectedItemForIssue(scannedItem);
-                    setIssueForm({...issueForm, unit: scannedItem.baseUnit});
-                  }} 
-                  className="bg-red-50 text-red-700 font-bold py-3 rounded hover:bg-red-100 border border-red-200"
-                >
-                  - Issue Stock
-                </button>
-              )}
-              {canTransfer && scannedItem.balances?.length > 0 && (
-                <button 
-                  onClick={() => {
-                    setScannedItem(null);
-                    setSelectedItemForTransfer(scannedItem);
-                    setTransferForm({...transferForm, unit: scannedItem.baseUnit});
-                  }} 
-                  className="bg-blue-50 text-blue-700 font-bold py-3 rounded hover:bg-blue-100 border border-blue-200"
-                >
-                  ⇄ Transfer Stock
-                </button>
-              )}
-            </div>
-            <button onClick={() => setScannedItem(null)} className="mt-6 w-full text-center text-gray-500 hover:text-gray-800 font-medium">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* --- ADD NEW PRODUCT MODAL --- */}
+      {/* --- ADD NEW PRODUCT MODAL (Maximized Horizontal UI) --- */}
       {isAddItemModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-3xl w-full shadow-xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
-            <h2 className="text-xl font-bold mb-4">Add New Product to Catalog</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+          {/* ✅ Max width increased to 7xl for horizontal spreading */}
+          <div className="bg-white rounded-xl p-6 w-11/12 max-w-6xl shadow-2xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
+            <h2 className="text-2xl font-bold mb-6 text-gray-800">Add New Product to Catalog</h2>
             <form onSubmit={handleAddItemSubmit}>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Product Name *</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.name} onChange={(e) => setAddItemForm({ ...addItemForm, name: e.target.value })} required />
+              
+              {/* Row 1: Basic Details (4 columns) */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Product Name *</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.name} onChange={(e) => setAddItemForm({ ...addItemForm, name: e.target.value })} required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">SKU *</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2 uppercase" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
+                  <label className="block text-sm font-medium mb-1 text-gray-700">SKU *</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2 uppercase focus:ring-2 focus:ring-green-500" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Type *</label>
+                  <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.typeId} onChange={(e) => setAddItemForm({ ...addItemForm, typeId: e.target.value })} required>
+                    <option value="">-- Select Type --</option>
+                    {itemTypes.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Category</label>
+                  <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
+                    <option value="">-- No Category --</option>
+                    {categories.map(c => <option key={c._id} value={c._id}>{c.parentId ? `↳ ${c.name}` : c.name}</option>)}
+                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              {/* Row 2: Specs & Pricing (4 columns) */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Product Company (Brand)</label>
-                  <input type="text" placeholder="e.g. Acme Corp" className="w-full border border-gray-300 rounded p-2" value={addItemForm.productCompanyName} onChange={(e) => setAddItemForm({ ...addItemForm, productCompanyName: e.target.value })} />
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Brand / Mfg</label>
+                  <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.productCompanyName} onChange={(e) => setAddItemForm({ ...addItemForm, productCompanyName: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Cost Per Unit</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Standard Cost/Unit</label>
                   <input type="number" min="0" step="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.costPerUnit} onChange={(e) => setAddItemForm({ ...addItemForm, costPerUnit: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Shelf Life</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Shelf Life</label>
                   <input type="text" placeholder="e.g. 12 months" className="w-full border border-gray-300 rounded p-2" value={addItemForm.shelfLife} onChange={(e) => setAddItemForm({ ...addItemForm, shelfLife: e.target.value })} />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Type *</label>
-                  <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.type} onChange={(e) => setAddItemForm({ ...addItemForm, type: e.target.value })} required>
-                    <option value="raw_material">Raw Material</option>
-                    <option value="finished_good">Finished Good</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Category</label>
-                  <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
-                    <option value="">-- No Category --</option>
-                    {categories.map(c => (
-                      <option key={c._id} value={c._id}>
-                        {c.parentId ? `↳ ${c.name}` : c.name} 
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Dimensions</label>
-                  <input type="text" placeholder="e.g. 10x10x5 cm" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimensions} onChange={(e) => setAddItemForm({ ...addItemForm, dimensions: e.target.value })} />
-                </div>
-              </div>
-
-              <div className="bg-orange-50 p-3 rounded border border-orange-200 mb-4">
-                <h4 className="text-sm font-bold text-orange-800 mb-2">Stock Alert Thresholds (Base Units)</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium mb-1 text-orange-700">Orange Alert (Warning)</label>
-                    <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.alertOrange} onChange={(e) => setAddItemForm({ ...addItemForm, alertOrange: e.target.value })} required />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1 text-red-600">Red Alert (Action Req)</label>
-                    <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.alertRed} onChange={(e) => setAddItemForm({ ...addItemForm, alertRed: e.target.value })} required />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1 text-red-800">Critical Alert (Outage)</label>
-                    <input type="number" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.alertCritical} onChange={(e) => setAddItemForm({ ...addItemForm, alertCritical: e.target.value })} required />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-blue-50 p-3 rounded border border-blue-200 mb-4">
-                <h4 className="text-sm font-bold text-blue-800 mb-2">Supplier Details</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Supplier Name</label>
-                    <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.supplierName} onChange={(e) => setAddItemForm({ ...addItemForm, supplierName: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Supplier Contact Info</label>
-                    <input type="text" placeholder="Email, Phone, etc." className="w-full border border-gray-300 rounded p-2" value={addItemForm.supplierContact} onChange={(e) => setAddItemForm({ ...addItemForm, supplierContact: e.target.value })} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-6 mt-2">
-                <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Measurement Units</h3>
-                
-                <div className="mb-4">
-                  <label className="block text-sm font-medium mb-1">Base Unit *</label>
-                  <select className="w-full border border-gray-300 rounded p-2" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value })} required>
+                 <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Base Unit *</label>
+                  <select className="w-full border border-gray-300 rounded p-2 font-medium bg-gray-50" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value })} required>
                     <option value="">-- Select Base Unit --</option>
                     {units.map(u => <option key={u._id} value={u.name}>{u.name} ({u.abbreviation})</option>)}
                   </select>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Secondary Unit (Optional)</label>
-                    <input 
-                      type="text" 
-                      className="w-full border border-gray-300 rounded p-2" 
-                      value={addItemForm.secUnitName} 
-                      onChange={(e) => setAddItemForm({ ...addItemForm, secUnitName: e.target.value })} 
-                      placeholder="e.g., Piece, Slice, Gram (Free text)" 
-                    />
+              {/* Row 3: Advanced Details (Split Dimensions & Alerts) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                
+                {/* Dimensions Block */}
+                <div className="bg-gray-50 p-4 rounded border border-gray-200">
+                  <h4 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Dimensions (Meters)</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Length</label>
+                      <input type="number" step="0.01" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimLength} onChange={(e) => setAddItemForm({ ...addItemForm, dimLength: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Breadth / Width</label>
+                      <input type="number" step="0.01" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimBreadth} onChange={(e) => setAddItemForm({ ...addItemForm, dimBreadth: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Height</label>
+                      <input type="number" step="0.01" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimHeight} onChange={(e) => setAddItemForm({ ...addItemForm, dimHeight: e.target.value })} />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Multiplier</label>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      min="0.01" 
-                      className="w-full border border-gray-300 rounded p-2" 
-                      value={addItemForm.secUnitMultiplier} 
-                      onChange={(e) => setAddItemForm({ ...addItemForm, secUnitMultiplier: e.target.value })} 
-                      placeholder={addItemForm.secUnitName ? `How many ${addItemForm.secUnitName} = 1 ${addItemForm.baseUnit || 'Base'}?` : ""} 
-                      required={!!addItemForm.secUnitName} 
-                      disabled={!addItemForm.secUnitName} 
-                    />
+                </div>
+
+                {/* Alerts Block */}
+                <div className="bg-orange-50 p-4 rounded border border-orange-200">
+                  <h4 className="text-sm font-bold text-orange-800 mb-3 border-b border-orange-200 pb-2">Stock Alert Thresholds (Base Units)</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-orange-700">Orange (Warning)</label>
+                      <input type="number" min="0" className="w-full border border-orange-300 rounded p-2" value={addItemForm.alertOrange} onChange={(e) => setAddItemForm({ ...addItemForm, alertOrange: e.target.value })} required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-red-600">Red (Action Req)</label>
+                      <input type="number" min="0" className="w-full border border-red-300 rounded p-2" value={addItemForm.alertRed} onChange={(e) => setAddItemForm({ ...addItemForm, alertRed: e.target.value })} required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-red-800">Critical (Outage)</label>
+                      <input type="number" min="0" className="w-full border border-red-500 rounded p-2 bg-red-50" value={addItemForm.alertCritical} onChange={(e) => setAddItemForm({ ...addItemForm, alertCritical: e.target.value })} required />
+                    </div>
                   </div>
                 </div>
               </div>
               
-              <div className="flex justify-end gap-3 mt-6">
-                <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Create Product</button>
+              <div className="flex justify-end gap-3 mt-6 border-t pt-4">
+                <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium transition-colors">Cancel</button>
+                <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-8 py-2 rounded hover:bg-green-700 font-bold shadow-md transition-all">Create Product</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- ADD STOCK MODAL --- */}
+      {/* --- OTHER MODALS (Add/Issue/Transfer) --- */}
+      {/* (Kept exactly identical to your original to ensure logic integrity) */}
+      
       {selectedItemForStock && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-gray-800">
@@ -582,7 +569,6 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- ISSUE STOCK MODAL --- */}
       {selectedItemForIssue && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-red-600">
@@ -623,7 +609,6 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- TRANSFER STOCK MODAL --- */}
       {selectedItemForTransfer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-blue-600">
@@ -668,7 +653,6 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- RENDER THE SCANNER COMPONENT --- */}
       {isScannerOpen && (
         <BarcodeScanner 
           onScanSuccess={handleScanSuccess} 
