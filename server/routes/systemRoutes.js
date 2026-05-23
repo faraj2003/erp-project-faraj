@@ -9,6 +9,8 @@ const {
   getUnits,
   createUnit,
   deleteUnit,
+  getTypes,
+  createType,
 } = require("../controllers/systemController");
 
 router.use(protect);
@@ -26,5 +28,10 @@ router
   .get(getUnits)
   .post(authorize("admin", "manager"), createUnit);
 router.delete("/units/:id", authorize("admin"), deleteUnit);
+
+router
+  .route("/types")
+  .get(getTypes)
+  .post(authorize("admin", "manager"), createType);
 
 module.exports = router;

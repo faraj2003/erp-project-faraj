@@ -41,7 +41,7 @@ const categorySchema = new mongoose.Schema(
 categorySchema.index({ companyId: 1, parentId: 1, name: 1 }, { unique: true });
 
 // Pre-save hook to automatically build the hierarchical path
-categorySchema.pre("save", async function (next) {
+categorySchema.pre("save", async function () {
   if (this.isModified("parentId")) {
     if (this.parentId) {
       const parent = await this.model("Category").findById(this.parentId);
@@ -52,7 +52,6 @@ categorySchema.pre("save", async function (next) {
       this.path = `,`; // Root path
     }
   }
-  next();
 });
 
 module.exports = mongoose.model("Category", categorySchema);

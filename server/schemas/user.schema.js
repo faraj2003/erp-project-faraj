@@ -26,6 +26,8 @@ const createUserSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   role: z.enum(VALID_ROLES).default("staff"),
+  // Added locationId to prevent the middleware from stripping it
+  locationId: z.string().optional().nullable(),
 });
 
 module.exports = { updateRoleSchema, createUserSchema };

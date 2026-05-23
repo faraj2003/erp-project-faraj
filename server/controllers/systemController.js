@@ -1,6 +1,7 @@
 // server/controllers/systemController.js
 const Category = require("../models/Category");
 const Unit = require("../models/Unit");
+const Type = require("../models/Type");
 
 // --- CATEGORY CONTROLLERS ---
 exports.getCategories = async (req, res, next) => {
@@ -84,6 +85,27 @@ exports.deleteUnit = async (req, res, next) => {
       companyId: req.companyId,
     });
     res.status(200).json({ success: true, message: "Unit deleted" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Add this at the very bottom
+exports.getTypes = async (req, res, next) => {
+  try {
+    const types = await Type.find({ companyId: req.companyId }).sort({
+      name: 1,
+    });
+    res.status(200).json({ success: true, data: types });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.createType = async (req, res, next) => {
+  try {
+    const type = await Type.create({ ...req.body, companyId: req.companyId });
+    res.status(201).json({ success: true, data: type });
   } catch (error) {
     next(error);
   }

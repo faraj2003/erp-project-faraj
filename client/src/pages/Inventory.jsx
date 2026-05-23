@@ -20,25 +20,30 @@ export default function Inventory() {
   const [selectedItemForIssue, setSelectedItemForIssue] = useState(null);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
-  // ✅ New UI States
+  // UI States
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [viewMode, setViewMode] = useState('grid');
   
   // Scanner States
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedItem, setScannedItem] = useState(null);
 
+  // Inline Creation States
+  const [isAddingNewType, setIsAddingNewType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const [addStockForm, setAddStockForm] = useState({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' });
   const [transferForm, setTransferForm] = useState({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
   const [issueForm, setIssueForm] = useState({ locationId: '', quantityToIssue: '', unit: '' });
   
-  // ✅ Updated Form State for Dimensions & Types
   const [addItemForm, setAddItemForm] = useState({
     sku: '', name: '', productCompanyName: '', typeId: '', categoryId: '', 
     costPerUnit: '', shelfLife: '', 
-    dimLength: '', dimBreadth: '', dimHeight: '', // Split Dimensions
+    dimLength: '', dimBreadth: '', dimHeight: '', 
     alertOrange: '', alertRed: '', alertCritical: '',
-    supplierName: '', supplierContact: '', baseRate: '', // Multi-supplier base fields
+    suppliers: [{ supplierId: '', contact: '', baseRate: '' }], 
     baseUnit: '', secUnitName: '', secUnitMultiplier: ''
   });
 
@@ -74,18 +79,37 @@ export default function Inventory() {
     },
   });
 
-  // Fetch dynamic Item Types (Replace with your actual endpoint if different)
   const { data: itemTypes = [] } = useQuery({
     queryKey: ['itemTypes'],
     queryFn: async () => {
-      try {
-        const { data } = await axios.get('/api/system/types');
-        return data.data;
-      } catch (err) {
-        // Fallback if endpoint doesn't exist yet
-        return [{ _id: 'raw_material', name: 'Raw Material' }, { _id: 'finished_good', name: 'Finished Good' }];
-      }
+      const { data } = await axios.get('/api/system/types');
+      return data.data;
     },
+  });
+
+  // --- Inline Creation Mutations ---
+  const createTypeMutation = useMutation({
+    mutationFn: async (name) => axios.post('/api/system/types', { name }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['itemTypes'] });
+      // Auto-select the newly created type
+      setAddItemForm({ ...addItemForm, typeId: res.data.data._id });
+      setIsAddingNewType(false);
+      setNewTypeName('');
+    },
+    onError: (error) => alert(error.response?.data?.message || "Failed to create type.")
+  });
+
+  const createCategoryMutation = useMutation({
+    mutationFn: async (name) => axios.post('/api/system/categories', { name, parentId: null }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      // Auto-select the newly created category
+      setAddItemForm({ ...addItemForm, categoryId: res.data.data._id });
+      setIsAddingNewCategory(false);
+      setNewCategoryName('');
+    },
+    onError: (error) => alert(error.response?.data?.message || "Failed to create category.")
   });
 
   const handleScanSuccess = (decodedSku) => {
@@ -109,7 +133,7 @@ export default function Inventory() {
         costPerUnit: '', shelfLife: '', 
         dimLength: '', dimBreadth: '', dimHeight: '',
         alertOrange: '', alertRed: '', alertCritical: '',
-        supplierName: '', supplierContact: '', baseRate: '',
+        suppliers: [{ supplierId: '', contact: '', baseRate: '' }],
         baseUnit: '', secUnitName: '', secUnitMultiplier: ''
       });
     },
@@ -166,36 +190,48 @@ export default function Inventory() {
     }
   };
 
+  const handleSupplierChange = (index, field, value) => {
+    const updatedSuppliers = [...addItemForm.suppliers];
+    updatedSuppliers[index][field] = value;
+    setAddItemForm({ ...addItemForm, suppliers: updatedSuppliers });
+  };
+
+  const addSupplierRow = () => {
+    setAddItemForm({
+      ...addItemForm,
+      suppliers: [...addItemForm.suppliers, { supplierId: '', contact: '', baseRate: '' }]
+    });
+  };
+
+  const removeSupplierRow = (index) => {
+    const updatedSuppliers = addItemForm.suppliers.filter((_, i) => i !== index);
+    setAddItemForm({ ...addItemForm, suppliers: updatedSuppliers });
+  };
+
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
     
-    // Structure payload based on the new Item schema
     const payload = { 
       sku: addItemForm.sku,
       name: addItemForm.name,
       productCompanyName: addItemForm.productCompanyName,
-      type: addItemForm.typeId, // Send dynamic type
+      type: addItemForm.typeId, 
       categoryId: addItemForm.categoryId || null,
       costPerUnit: Number(addItemForm.costPerUnit) || 0,
       shelfLife: addItemForm.shelfLife,
-      
-      // Split dimensions formatting
       dimensions: {
         length: Number(addItemForm.dimLength) || 0,
         breadth: Number(addItemForm.dimBreadth) || 0,
         height: Number(addItemForm.dimHeight) || 0
       },
-
       alertLevels: {
         orange: Number(addItemForm.alertOrange),
         red: Number(addItemForm.alertRed),
         critical: Number(addItemForm.alertCritical)
       },
-      
-      // Multi-supplier structure (if a supplier is selected)
-      // Note: Assuming supplierName is an ID in reality, or needs a lookup. Adjust based on your supplier implementation.
       baseUnit: addItemForm.baseUnit,
-      secondaryUnits: []
+      secondaryUnits: [],
+      suppliers: []
     };
     
     if (addItemForm.secUnitName && addItemForm.secUnitMultiplier) {
@@ -204,6 +240,18 @@ export default function Inventory() {
         multiplierToBase: Number(addItemForm.secUnitMultiplier)
       });
     }
+
+    payload.suppliers = addItemForm.suppliers
+      .filter(s => s.supplierId && s.baseRate)
+      .map(s => ({
+        supplierId: s.supplierId,
+        baseRate: Number(s.baseRate),
+        history: [{
+          rate: Number(s.baseRate),
+          date: new Date()
+        }]
+      }));
+
     addItemMutation.mutate(payload);
   };
 
@@ -244,7 +292,6 @@ export default function Inventory() {
     return options;
   };
 
-  // ✅ Filter items based on search term
   const filteredItems = items?.filter(item => 
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.sku.toLowerCase().includes(searchTerm.toLowerCase())
@@ -254,11 +301,9 @@ export default function Inventory() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* --- HEADER & ACTIONS --- */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
         <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
         
-        {/* ✅ Search Bar */}
         <div className="w-full lg:w-1/3">
           <input 
             type="text" 
@@ -270,7 +315,6 @@ export default function Inventory() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          {/* ✅ View Toggles */}
           <div className="flex bg-gray-100 rounded border border-gray-200 p-1">
             <button 
               onClick={() => setViewMode('grid')} 
@@ -306,7 +350,6 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* --- INVENTORY LIST (Dynamic Grid/List View) --- */}
       <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "flex flex-col gap-4"}>
         {filteredItems?.map((item) => (
           <div key={item._id} className="bg-white p-6 rounded shadow border border-gray-200">
@@ -320,7 +363,6 @@ export default function Inventory() {
                 )}
                 <div className="flex items-center gap-2 mt-2">
                   <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded capitalize">
-                    {/* Display type cleanly (handles object ID or plain string) */}
                     {item.type?.name || item.type?.replace('_', ' ') || "Standard"}
                   </span>
                   {item.categoryId && item.categoryId.name && (
@@ -413,15 +455,14 @@ export default function Inventory() {
         <TransactionLedger />
       </div>
 
-      {/* --- ADD NEW PRODUCT MODAL (Maximized Horizontal UI) --- */}
+      {/* --- ADD NEW PRODUCT MODAL --- */}
       {isAddItemModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          {/* ✅ Max width increased to 7xl for horizontal spreading */}
           <div className="bg-white rounded-xl p-6 w-11/12 max-w-6xl shadow-2xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">Add New Product to Catalog</h2>
             <form onSubmit={handleAddItemSubmit}>
               
-              {/* Row 1: Basic Details (4 columns) */}
+              {/* Row 1: Basic Details */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-medium mb-1 text-gray-700">Product Name *</label>
@@ -431,23 +472,77 @@ export default function Inventory() {
                   <label className="block text-sm font-medium mb-1 text-gray-700">SKU *</label>
                   <input type="text" className="w-full border border-gray-300 rounded p-2 uppercase focus:ring-2 focus:ring-green-500" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
                 </div>
+                
+                {/* --- DYNAMIC TYPE DROPDOWN/CREATION --- */}
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Type *</label>
-                  <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.typeId} onChange={(e) => setAddItemForm({ ...addItemForm, typeId: e.target.value })} required>
-                    <option value="">-- Select Type --</option>
-                    {itemTypes.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
-                  </select>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Type *</label>
+                    <button type="button" onClick={() => setIsAddingNewType(!isAddingNewType)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                      {isAddingNewType ? "Cancel" : "+ New"}
+                    </button>
+                  </div>
+                  {isAddingNewType ? (
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        className="w-full border border-indigo-300 rounded p-2 focus:ring-2 focus:ring-indigo-500" 
+                        placeholder="New Type Name" 
+                        value={newTypeName} 
+                        onChange={(e) => setNewTypeName(e.target.value)} 
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => newTypeName.trim() && createTypeMutation.mutate(newTypeName)} 
+                        disabled={createTypeMutation.isLoading || !newTypeName.trim()}
+                        className="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 text-sm font-medium disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.typeId} onChange={(e) => setAddItemForm({ ...addItemForm, typeId: e.target.value })} required>
+                      <option value="">-- Select Type --</option>
+                      {itemTypes.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
+                    </select>
+                  )}
                 </div>
+
+                {/* --- DYNAMIC CATEGORY DROPDOWN/CREATION --- */}
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Category</label>
-                  <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
-                    <option value="">-- No Category --</option>
-                    {categories.map(c => <option key={c._id} value={c._id}>{c.parentId ? `↳ ${c.name}` : c.name}</option>)}
-                  </select>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Category</label>
+                    <button type="button" onClick={() => setIsAddingNewCategory(!isAddingNewCategory)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                      {isAddingNewCategory ? "Cancel" : "+ New"}
+                    </button>
+                  </div>
+                  {isAddingNewCategory ? (
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        className="w-full border border-indigo-300 rounded p-2 focus:ring-2 focus:ring-indigo-500" 
+                        placeholder="New Category (Root)" 
+                        value={newCategoryName} 
+                        onChange={(e) => setNewCategoryName(e.target.value)} 
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => newCategoryName.trim() && createCategoryMutation.mutate(newCategoryName)} 
+                        disabled={createCategoryMutation.isLoading || !newCategoryName.trim()}
+                        className="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 text-sm font-medium disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
+                      <option value="">-- No Category --</option>
+                      {categories.map(c => <option key={c._id} value={c._id}>{c.parentId ? `↳ ${c.name}` : c.name}</option>)}
+                    </select>
+                  )}
                 </div>
               </div>
 
-              {/* Row 2: Specs & Pricing (4 columns) */}
+              {/* Row 2: Specs & Pricing */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">Brand / Mfg</label>
@@ -472,8 +567,6 @@ export default function Inventory() {
 
               {/* Row 3: Advanced Details (Split Dimensions & Alerts) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                
-                {/* Dimensions Block */}
                 <div className="bg-gray-50 p-4 rounded border border-gray-200">
                   <h4 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Dimensions (Meters)</h4>
                   <div className="grid grid-cols-3 gap-3">
@@ -492,7 +585,6 @@ export default function Inventory() {
                   </div>
                 </div>
 
-                {/* Alerts Block */}
                 <div className="bg-orange-50 p-4 rounded border border-orange-200">
                   <h4 className="text-sm font-bold text-orange-800 mb-3 border-b border-orange-200 pb-2">Stock Alert Thresholds (Base Units)</h4>
                   <div className="grid grid-cols-3 gap-3">
@@ -511,6 +603,60 @@ export default function Inventory() {
                   </div>
                 </div>
               </div>
+
+              {/* Row 4: Multi-Supplier Configuration */}
+              <div className="bg-blue-50 p-4 rounded border border-blue-200 mb-6">
+                <div className="flex justify-between items-center mb-3 border-b border-blue-200 pb-2">
+                  <h4 className="text-sm font-bold text-blue-800">Supplier Configurations</h4>
+                  <button type="button" onClick={addSupplierRow} className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 shadow-sm">
+                    + Add Supplier
+                  </button>
+                </div>
+                
+                {addItemForm.suppliers.map((supplier, index) => (
+                  <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end mb-3 bg-white p-3 rounded shadow-sm border border-blue-100">
+                    <div className="col-span-4">
+                      <label className="block text-xs font-medium mb-1 text-blue-700">Supplier ID (ObjectId) *</label>
+                      <input 
+                        type="text" 
+                        className="w-full border border-gray-300 rounded p-2 text-sm" 
+                        placeholder="Paste DB ID"
+                        value={supplier.supplierId} 
+                        onChange={(e) => handleSupplierChange(index, 'supplierId', e.target.value)} 
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <label className="block text-xs font-medium mb-1 text-blue-700">Contact/Ref</label>
+                      <input 
+                        type="text" 
+                        className="w-full border border-gray-300 rounded p-2 text-sm" 
+                        placeholder="Optional"
+                        value={supplier.contact} 
+                        onChange={(e) => handleSupplierChange(index, 'contact', e.target.value)} 
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="block text-xs font-medium mb-1 text-blue-700">Base Rate (₹) *</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        min="0" 
+                        className="w-full border border-gray-300 rounded p-2 text-sm" 
+                        placeholder="0.00"
+                        value={supplier.baseRate} 
+                        onChange={(e) => handleSupplierChange(index, 'baseRate', e.target.value)} 
+                      />
+                    </div>
+                    <div className="col-span-1 flex justify-end">
+                      {addItemForm.suppliers.length > 1 && (
+                        <button type="button" onClick={() => removeSupplierRow(index)} className="bg-red-100 text-red-600 hover:bg-red-200 p-2 rounded mb-1">
+                          ✖
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
               
               <div className="flex justify-end gap-3 mt-6 border-t pt-4">
                 <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium transition-colors">Cancel</button>
@@ -521,9 +667,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- OTHER MODALS (Add/Issue/Transfer) --- */}
-      {/* (Kept exactly identical to your original to ensure logic integrity) */}
-      
+      {/* RECEIVE, ISSUE, AND TRANSFER MODALS */}
       {selectedItemForStock && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-gray-800">
@@ -536,7 +680,6 @@ export default function Inventory() {
                   {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
                 </select>
               </div>
-
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">Batch / Lot No.</label>
@@ -547,7 +690,6 @@ export default function Inventory() {
                   <input type="date" className="w-full border border-gray-300 rounded p-2" value={addStockForm.expiryDate} onChange={(e) => setAddStockForm({ ...addStockForm, expiryDate: e.target.value })} />
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium mb-1">Quantity</label>
