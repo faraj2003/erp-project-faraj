@@ -1,69 +1,77 @@
 // src/components/layout/AppShell.jsx
-// The persistent application frame that wraps all authenticated pages.
-// Contains:
-//   - Sidebar: navigation links filtered by user role
-//   - Topbar: current page title + user info + logout button
-//   - Main content area: renders child routes via <Outlet />
-
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useInventorySocket } from '../../hooks/useInventorySocket';
+import {
+  LayoutDashboard,
+  Package,
+  ClipboardList,
+  Wrench,
+  FileEdit,
+  Factory,
+  Truck,
+  Building2,
+  Users,
+  LogOut,
+  Sun,
+  Moon,
+  Settings
+} from 'lucide-react';
 
-// Role-aware nav items
 const navItems = [
   {
     label: 'Dashboard',
     path: '/dashboard',
-    icon: '📊',
+    icon: <LayoutDashboard size={20} />,
     roles: ['staff', 'manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
   },
   {
     label: 'Inventory',
     path: '/inventory',
-    icon: '📦',
+    icon: <Package size={20} />,
     roles: ['staff', 'manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager', 'procurement_manager'],
   },
   {
     label: 'Cycle Counts',
     path: '/inventory/cycle-counts',
-    icon: '📋',
+    icon: <ClipboardList size={20} />,
     roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'procurement_manager'],
   },
   {
     label: 'Manufacturing (BOM)',
     path: '/inventory/boms',
-    icon: '🛠️',
+    icon: <Wrench size={20} />,
     roles: ['manager', 'admin', 'shop_manager', 'shop_worker'],
   },
   {
     label: 'Adjustments',
     path: '/adjustments',
-    icon: '📝',
+    icon: <FileEdit size={20} />,
     roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager'], 
   },
   {
     label: 'Orders',
     path: '/orders',
-    icon: '🏭',
+    icon: <Factory size={20} />,
     roles: ['staff', 'manager', 'admin', 'shop_manager', 'dispatch_manager'],
   },
   {
     label: 'Procurement',
     path: '/procurement',
-    icon: '🚚',
+    icon: <Truck size={20} />,
     roles: ['admin', 'manager', 'procurement_manager'],
   },
   {
     label: 'Locations', 
     path: '/locations',
-    icon: '🏢',
+    icon: <Building2 size={20} />,
     roles: ['manager', 'admin'],
   },
   {
     label: 'Users',
     path: '/users',
-    icon: '👥',
+    icon: <Users size={20} />,
     roles: ['admin'],
   },
 ];
@@ -72,7 +80,6 @@ const AppShell = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  // Dark Mode State & Persistence
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark');
 
   useEffect(() => {
@@ -85,7 +92,6 @@ const AppShell = () => {
     }
   }, [isDark]);
 
-  // Mount the real-time socket for all authenticated pages
   useInventorySocket();
 
   const handleLogout = () => {
@@ -93,7 +99,6 @@ const AppShell = () => {
     navigate('/login');
   };
 
-  // Filter nav items based on logged-in user's role
   const visibleNav = navItems.filter((item) => item.roles.includes(user?.role));
 
   const roleBadgeColor = {
@@ -104,17 +109,17 @@ const AppShell = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden transition-colors duration-200">
-      {/* ── SIDEBAR ── */}
       <aside className="w-60 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col shadow-sm flex-shrink-0 transition-colors duration-200">
-        {/* Logo */}
-        <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700">
-          <h1 className="text-xl font-extrabold text-blue-600 dark:text-blue-400 tracking-tight">
-            ⚙️ FactoryFlow
-          </h1>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Production ERP</p>
+        <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+          <Settings className="text-blue-600 dark:text-blue-400" size={24} />
+          <div>
+            <h1 className="text-xl font-extrabold text-blue-600 dark:text-blue-400 tracking-tight leading-none">
+              FactoryFlow
+            </h1>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Production ERP</p>
+          </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {visibleNav.map((item) => (
             <NavLink
@@ -128,13 +133,12 @@ const AppShell = () => {
                 }`
               }
             >
-              <span className="text-base">{item.icon}</span>
+              <span className="flex items-center justify-center text-gray-500 dark:text-gray-400">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
         </nav>
 
-        {/* User info at bottom of sidebar */}
         <div className="px-4 py-4 border-t border-gray-100 dark:border-gray-700">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
@@ -154,9 +158,7 @@ const AppShell = () => {
         </div>
       </aside>
 
-      {/* ── MAIN CONTENT AREA ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Topbar */}
         <header className="h-14 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-6 flex-shrink-0 shadow-sm transition-colors duration-200">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Welcome back, <span className="font-semibold text-gray-800 dark:text-gray-200">{user?.name}</span>
@@ -165,22 +167,21 @@ const AppShell = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsDark(!isDark)}
-              className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center"
               title="Toggle Dark Mode"
             >
-              {isDark ? '☀️' : '🌙'}
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg transition-colors duration-150"
             >
-              <span>🚪</span> Logout
+              <LogOut size={18} /> Logout
             </button>
           </div>
         </header>
 
-        {/* Page content — child routes render here */}
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>

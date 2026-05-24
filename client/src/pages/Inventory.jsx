@@ -5,6 +5,10 @@ import axios from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
 import BarcodeScanner from '../components/BarcodeScanner'; 
 import TransactionLedger from '../components/TransactionLedger';
+import { 
+  Search, LayoutGrid, List as ListIcon, ScanBarcode, Download, Plus, 
+  ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, X 
+} from 'lucide-react';
 
 export default function Inventory() {
   const queryClient = useQueryClient();
@@ -20,15 +24,12 @@ export default function Inventory() {
   const [selectedItemForIssue, setSelectedItemForIssue] = useState(null);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   
-  // UI States
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('grid');
   
-  // Scanner States
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedItem, setScannedItem] = useState(null);
 
-  // Inline Creation States
   const [isAddingNewType, setIsAddingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
@@ -55,44 +56,16 @@ export default function Inventory() {
     },
   });
 
-  const { data: locations } = useQuery({
-    queryKey: ['locations'],
-    queryFn: async () => {
-      const { data } = await axios.get('/api/locations');
-      return data;
-    },
-  });
+  const { data: locations } = useQuery({ queryKey: ['locations'], queryFn: async () => (await axios.get('/api/locations')).data });
+  const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: async () => (await axios.get('/api/system/categories')).data.data });
+  const { data: units = [] } = useQuery({ queryKey: ['units'], queryFn: async () => (await axios.get('/api/system/units')).data.data });
+  const { data: itemTypes = [] } = useQuery({ queryKey: ['itemTypes'], queryFn: async () => (await axios.get('/api/system/types')).data.data });
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: async () => {
-      const { data } = await axios.get('/api/system/categories');
-      return data.data;
-    },
-  });
-
-  const { data: units = [] } = useQuery({
-    queryKey: ['units'],
-    queryFn: async () => {
-      const { data } = await axios.get('/api/system/units');
-      return data.data;
-    },
-  });
-
-  const { data: itemTypes = [] } = useQuery({
-    queryKey: ['itemTypes'],
-    queryFn: async () => {
-      const { data } = await axios.get('/api/system/types');
-      return data.data;
-    },
-  });
-
-  // --- Inline Creation Mutations ---
+  // Mutations (Logic identical to previous version)
   const createTypeMutation = useMutation({
     mutationFn: async (name) => axios.post('/api/system/types', { name }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['itemTypes'] });
-      // Auto-select the newly created type
       setAddItemForm({ ...addItemForm, typeId: res.data.data._id });
       setIsAddingNewType(false);
       setNewTypeName('');
@@ -104,7 +77,6 @@ export default function Inventory() {
     mutationFn: async (name) => axios.post('/api/system/categories', { name, parentId: null }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
-      // Auto-select the newly created category
       setAddItemForm({ ...addItemForm, categoryId: res.data.data._id });
       setIsAddingNewCategory(false);
       setNewCategoryName('');
@@ -115,12 +87,8 @@ export default function Inventory() {
   const handleScanSuccess = (decodedSku) => {
     setIsScannerOpen(false); 
     const foundItem = items.find(item => item.sku.toLowerCase() === decodedSku.toLowerCase());
-    
-    if (foundItem) {
-      setScannedItem(foundItem); 
-    } else {
-      alert(`SKU not found in system: ${decodedSku}`);
-    }
+    if (foundItem) setScannedItem(foundItem); 
+    else alert(`SKU not found in system: ${decodedSku}`);
   };
 
   const addItemMutation = useMutation({
@@ -130,8 +98,7 @@ export default function Inventory() {
       setIsAddItemModalOpen(false);
       setAddItemForm({
         sku: '', name: '', productCompanyName: '', typeId: '', categoryId: '', 
-        costPerUnit: '', shelfLife: '', 
-        dimLength: '', dimBreadth: '', dimHeight: '',
+        costPerUnit: '', shelfLife: '', dimLength: '', dimBreadth: '', dimHeight: '',
         alertOrange: '', alertRed: '', alertCritical: '',
         suppliers: [{ supplierId: '', contact: '', baseRate: '' }],
         baseUnit: '', secUnitName: '', secUnitMultiplier: ''
@@ -143,8 +110,7 @@ export default function Inventory() {
   const addStockMutation = useMutation({
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/stock`, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'transactions'] });
       setSelectedItemForStock(null);
       setAddStockForm({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' });
     },
@@ -154,8 +120,7 @@ export default function Inventory() {
   const transferStockMutation = useMutation({
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/transfer`, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'transactions'] });
       setSelectedItemForTransfer(null);
       setTransferForm({ sourceLocationId: '', destinationLocationId: '', quantity: '', unit: '' });
     },
@@ -165,8 +130,7 @@ export default function Inventory() {
   const issueStockMutation = useMutation({
     mutationFn: async ({ id, payload }) => axios.post(`/api/inventory/${id}/issue`, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'transactions'] });
       setSelectedItemForIssue(null);
       setIssueForm({ locationId: '', quantityToIssue: '', unit: '' });
     },
@@ -178,16 +142,10 @@ export default function Inventory() {
       const response = await axios.get('/api/inventory/export/items', { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'inventory_catalog_valuation.csv');
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
+      link.href = url; link.setAttribute('download', 'inventory_catalog.csv');
+      document.body.appendChild(link); link.click(); link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (error) {
-      alert("Failed to export items.");
-      console.error(error);
-    }
+    } catch (error) { alert("Failed to export items."); }
   };
 
   const handleSupplierChange = (index, field, value) => {
@@ -196,100 +154,21 @@ export default function Inventory() {
     setAddItemForm({ ...addItemForm, suppliers: updatedSuppliers });
   };
 
-  const addSupplierRow = () => {
-    setAddItemForm({
-      ...addItemForm,
-      suppliers: [...addItemForm.suppliers, { supplierId: '', contact: '', baseRate: '' }]
-    });
-  };
-
-  const removeSupplierRow = (index) => {
-    const updatedSuppliers = addItemForm.suppliers.filter((_, i) => i !== index);
-    setAddItemForm({ ...addItemForm, suppliers: updatedSuppliers });
-  };
-
   const handleAddItemSubmit = (e) => {
     e.preventDefault();
-    
     const payload = { 
-      sku: addItemForm.sku,
-      name: addItemForm.name,
-      productCompanyName: addItemForm.productCompanyName,
-      type: addItemForm.typeId, 
-      categoryId: addItemForm.categoryId || null,
-      costPerUnit: Number(addItemForm.costPerUnit) || 0,
+      sku: addItemForm.sku, name: addItemForm.name, productCompanyName: addItemForm.productCompanyName,
+      type: addItemForm.typeId, categoryId: addItemForm.categoryId || null, costPerUnit: Number(addItemForm.costPerUnit) || 0,
       shelfLife: addItemForm.shelfLife,
-      dimensions: {
-        length: Number(addItemForm.dimLength) || 0,
-        breadth: Number(addItemForm.dimBreadth) || 0,
-        height: Number(addItemForm.dimHeight) || 0
-      },
-      alertLevels: {
-        orange: Number(addItemForm.alertOrange),
-        red: Number(addItemForm.alertRed),
-        critical: Number(addItemForm.alertCritical)
-      },
-      baseUnit: addItemForm.baseUnit,
-      secondaryUnits: [],
-      suppliers: []
+      dimensions: { length: Number(addItemForm.dimLength) || 0, breadth: Number(addItemForm.dimBreadth) || 0, height: Number(addItemForm.dimHeight) || 0 },
+      alertLevels: { orange: Number(addItemForm.alertOrange), red: Number(addItemForm.alertRed), critical: Number(addItemForm.alertCritical) },
+      baseUnit: addItemForm.baseUnit, secondaryUnits: [], suppliers: []
     };
-    
-    if (addItemForm.secUnitName && addItemForm.secUnitMultiplier) {
-      payload.secondaryUnits.push({
-        name: addItemForm.secUnitName,
-        multiplierToBase: Number(addItemForm.secUnitMultiplier)
-      });
-    }
-
-    payload.suppliers = addItemForm.suppliers
-      .filter(s => s.supplierId && s.baseRate)
-      .map(s => ({
-        supplierId: s.supplierId,
-        baseRate: Number(s.baseRate),
-        history: [{
-          rate: Number(s.baseRate),
-          date: new Date()
-        }]
-      }));
-
+    if (addItemForm.secUnitName && addItemForm.secUnitMultiplier) payload.secondaryUnits.push({ name: addItemForm.secUnitName, multiplierToBase: Number(addItemForm.secUnitMultiplier) });
+    payload.suppliers = addItemForm.suppliers.filter(s => s.supplierId && s.baseRate).map(s => ({
+      supplierId: s.supplierId, baseRate: Number(s.baseRate), history: [{ rate: Number(s.baseRate), date: new Date() }]
+    }));
     addItemMutation.mutate(payload);
-  };
-
-  const handleAddStockSubmit = (e) => {
-    e.preventDefault();
-    if (!addStockForm.locationId || !addStockForm.quantityToAdd) return;
-    const payload = { ...addStockForm, quantityToAdd: Number(addStockForm.quantityToAdd) };
-    if (!payload.batchNumber) delete payload.batchNumber;
-    if (!payload.expiryDate) delete payload.expiryDate;
-    addStockMutation.mutate({ id: selectedItemForStock._id, payload });
-  };
-
-  const handleTransferSubmit = (e) => {
-    e.preventDefault();
-    if (!transferForm.sourceLocationId || !transferForm.destinationLocationId || !transferForm.quantity) return;
-    transferStockMutation.mutate({ 
-      id: selectedItemForTransfer._id, 
-      payload: { ...transferForm, quantity: Number(transferForm.quantity) } 
-    });
-  };
-
-  const handleIssueSubmit = (e) => {
-    e.preventDefault();
-    if (!issueForm.locationId || !issueForm.quantityToIssue) return;
-    issueStockMutation.mutate({ 
-      id: selectedItemForIssue._id, 
-      payload: { ...issueForm, quantityToIssue: Number(issueForm.quantityToIssue) } 
-    });
-  };
-
-  const renderUnitOptions = (item) => {
-    const options = [<option key="base" value={item.baseUnit}>{item.baseUnit} (Base)</option>];
-    if (item.secondaryUnits) {
-      item.secondaryUnits.forEach(u => {
-        options.push(<option key={u.name} value={u.name}>{u.name}</option>);
-      });
-    }
-    return options;
   };
 
   const filteredItems = items?.filter(item => 
@@ -297,244 +176,322 @@ export default function Inventory() {
     item.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (itemsLoading) return <div className="p-4 text-gray-600">Loading Inventory...</div>;
+  const renderUnitOptions = (item) => {
+    const options = [<option key="base" value={item.baseUnit}>{item.baseUnit} (Base)</option>];
+    if (item.secondaryUnits) item.secondaryUnits.forEach(u => options.push(<option key={u.name} value={u.name}>{u.name}</option>));
+    return options;
+  };
+
+  if (itemsLoading) return <div className="p-10 text-center font-medium text-gray-400 animate-pulse">Loading Inventory...</div>;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
-        <h1 className="text-2xl font-bold text-gray-800">Global Inventory Overview</h1>
-        
-        <div className="w-full lg:w-1/3">
-          <input 
-            type="text" 
-            placeholder="Search by name or SKU..." 
-            className="w-full border border-gray-300 rounded px-4 py-2 shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+    <div className="p-6 max-w-7xl mx-auto pb-12">
+      {/* ── HEADER & TOOLBAR ── */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-gray-800 tracking-tight">Global Inventory</h1>
+          <p className="text-sm font-medium text-gray-500 mt-1">Manage stock, catalogs, and locations</p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          <div className="flex bg-gray-100 rounded border border-gray-200 p-1">
-            <button 
-              onClick={() => setViewMode('grid')} 
-              className={`px-3 py-1 text-sm font-medium rounded ${viewMode === 'grid' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Grid
-            </button>
-            <button 
-              onClick={() => setViewMode('list')} 
-              className={`px-3 py-1 text-sm font-medium rounded ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              List
-            </button>
+        
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input 
+              type="text" placeholder="Search name or SKU..." 
+              className="input pl-9"
+              value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
 
-          <button 
-            onClick={() => setIsScannerOpen(true)} 
-            className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-medium shadow-sm flex items-center gap-2 transition-colors"
-          >
-            <span className="text-lg">📷</span> Scan SKU
+          <div className="flex bg-gray-100/80 p-1 rounded-lg border border-gray-200/60 shadow-inner">
+            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}><LayoutGrid size={18} /></button>
+            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}><ListIcon size={18} /></button>
+          </div>
+
+          <button onClick={() => setIsScannerOpen(true)} className="btn-secondary flex items-center gap-2">
+            <ScanBarcode size={18} /> Scan
           </button>
           
           {canCreateItem && (
-            <button onClick={handleExportItems} className="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded hover:bg-gray-50 font-medium shadow-sm transition-colors">
-              📥 Export
-            </button>
-          )}
-          {canCreateItem && (
-            <button onClick={() => setIsAddItemModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium shadow-sm transition-colors">
-              + New Product
-            </button>
+            <>
+              <button onClick={handleExportItems} className="btn-secondary flex items-center gap-2">
+                <Download size={18} /> Export
+              </button>
+              <button onClick={() => setIsAddItemModalOpen(true)} className="btn-primary flex items-center gap-2 shadow-blue-500/30">
+                <Plus size={18} /> Product
+              </button>
+            </>
           )}
         </div>
       </div>
 
+      {/* ── INVENTORY GRID ── */}
       <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "flex flex-col gap-4"}>
-        {filteredItems?.map((item) => (
-          <div key={item._id} className="bg-white p-6 rounded shadow border border-gray-200">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-xl font-bold text-gray-800">
-                  {item.name} <span className="text-sm font-normal text-gray-500">({item.sku})</span>
-                </h2>
-                {item.productCompanyName && (
-                   <p className="text-sm text-gray-600 mt-1">Brand/Mfg: <span className="font-medium">{item.productCompanyName}</span></p>
-                )}
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded capitalize">
-                    {item.type?.name || item.type?.replace('_', ' ') || "Standard"}
-                  </span>
-                  {item.categoryId && item.categoryId.name && (
-                     <span className="inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
-                       {item.categoryId.name}
-                     </span>
-                  )}
+        {filteredItems?.map((item) => {
+          let stockColor = 'text-emerald-600';
+          if (item.currentStock <= (item.alertLevels?.critical || 0)) stockColor = 'text-red-600 font-black';
+          else if (item.currentStock <= (item.alertLevels?.red || 0)) stockColor = 'text-rose-600';
+          else if (item.currentStock <= (item.alertLevels?.orange || 0)) stockColor = 'text-amber-500';
+
+          return (
+            <div key={item._id} className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-gray-200/60 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+              <div className="flex justify-between items-start mb-5">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+                    {item.name} <span className="text-xs font-mono font-bold text-gray-400 ml-2 uppercase bg-gray-100 px-2 py-1 rounded">{item.sku}</span>
+                  </h2>
+                  {item.productCompanyName && <p className="text-xs text-gray-500 mt-1.5 uppercase tracking-widest font-bold">{item.productCompanyName}</p>}
+                  
+                  <div className="flex items-center gap-2 mt-3">
+                    <span className="inline-block bg-blue-50/50 border border-blue-100 text-blue-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                      {item.type?.name || item.type?.replace('_', ' ') || "Standard"}
+                    </span>
+                    {item.categoryId?.name && (
+                      <span className="inline-block bg-purple-50/50 border border-purple-100 text-purple-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                        {item.categoryId.name}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {item.dimensions && (item.dimensions.length > 0 || item.dimensions.breadth > 0) && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Dims: {item.dimensions.length}L x {item.dimensions.breadth}W x {item.dimensions.height}H (m)
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Total Stock</p>
+                  <p className={`text-2xl font-black tracking-tight ${stockColor}`}>
+                    {item.currentStock} <span className="text-xs font-bold text-gray-500 uppercase ml-0.5">{item.baseUnit}</span>
                   </p>
+                </div>
+              </div>
+
+              <div className="mt-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
+                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Stock by Location</h3>
+                {item.balances?.length > 0 ? (
+                  <ul className="space-y-2">
+                    {item.balances.map((balance) => (
+                      <li key={balance._id} className="flex justify-between items-center text-sm bg-white p-3 rounded-lg border border-gray-200/60 shadow-sm">
+                        <div>
+                          <span className="text-gray-800 font-bold">{balance.locationId?.name || 'Unknown'}</span>
+                          {balance.batchNumber && balance.batchNumber !== 'DEFAULT-BATCH' && (
+                            <div className="flex gap-2 mt-1.5">
+                              <span className="text-[9px] uppercase font-bold tracking-wider text-gray-500">Lot: {balance.batchNumber}</span>
+                              {balance.expiryDate && <span className="text-[9px] uppercase font-bold tracking-wider text-red-500">Exp: {new Date(balance.expiryDate).toLocaleDateString()}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <span className="font-bold text-gray-800 text-base">{balance.quantity} <span className="text-[10px] text-gray-400 uppercase">{item.baseUnit}</span></span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-xs font-medium text-gray-400 italic">No stock found in permitted locations.</p>}
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {canReceive && (
+                  <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit});}} className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
+                    <ArrowDownToLine size={14} /> Receive
+                  </button>
+                )}
+                {canIssue && item.balances?.length > 0 && (
+                  <button onClick={() => {setSelectedItemForIssue(item); setIssueForm({...issueForm, unit: item.baseUnit});}} className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
+                    <ArrowUpFromLine size={14} /> Issue
+                  </button>
+                )}
+                {canTransfer && item.balances?.length > 0 && (
+                  <button onClick={() => {setSelectedItemForTransfer(item); setTransferForm({...transferForm, unit: item.baseUnit});}} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
+                    <ArrowRightLeft size={14} /> Transfer
+                  </button>
                 )}
               </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-500 uppercase tracking-wide">Total Stock</p>
-                {(() => {
-                  let textColor = 'text-green-600';
-                  if (item.currentStock <= (item.alertLevels?.critical || 0)) textColor = 'text-red-800 font-black';
-                  else if (item.currentStock <= (item.alertLevels?.red || 0)) textColor = 'text-red-600';
-                  else if (item.currentStock <= (item.alertLevels?.orange || 0)) textColor = 'text-orange-500';
-
-                  return (
-                    <p className={`text-2xl font-bold ${textColor}`}>
-                      {item.currentStock} {item.baseUnit}
-                    </p>
-                  );
-                })()}
-              </div>
             </div>
-
-            <div className="mt-4 bg-gray-50 p-4 rounded border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Stock by Location & Batch:</h3>
-              {item.balances?.length > 0 ? (
-                <ul className="space-y-2">
-                  {item.balances.map((balance) => (
-                    <li key={balance._id} className="flex justify-between items-center text-sm bg-white p-3 rounded border border-gray-200 shadow-sm">
-                      <div>
-                        <span className="text-gray-800 font-bold">{balance.locationId?.name || 'Unknown'}</span>
-                        {balance.batchNumber && balance.batchNumber !== 'DEFAULT-BATCH' && (
-                          <div className="flex gap-2 mt-1.5">
-                            <span className="bg-gray-100 text-gray-600 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border border-gray-200">
-                              Lot: {balance.batchNumber}
-                            </span>
-                            {balance.expiryDate && (
-                              <span className="bg-red-50 text-red-600 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border border-red-100">
-                                Exp: {new Date(balance.expiryDate).toLocaleDateString()}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <span className="font-bold text-gray-800 text-lg">{balance.quantity} <span className="text-sm font-normal text-gray-500">{item.baseUnit}</span></span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-500 italic">No stock found in permitted locations.</p>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-3">
-              {canReceive && (
-                <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit, batchNumber: '', expiryDate: ''});}} className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded text-sm font-medium transition-colors">
-                  + Receive
-                </button>
-              )}
-              {canIssue && item.balances?.length > 0 && (
-                <button onClick={() => {setSelectedItemForIssue(item); setIssueForm({...issueForm, unit: item.baseUnit});}} className="bg-red-50 text-red-700 hover:bg-red-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-red-200">
-                  - Issue
-                </button>
-              )}
-              {canTransfer && item.balances?.length > 0 && (
-                <button onClick={() => {setSelectedItemForTransfer(item); setTransferForm({...transferForm, unit: item.baseUnit});}} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded text-sm font-medium transition-colors border border-blue-200">
-                  ⇄ Transfer
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-        
-        {filteredItems?.length === 0 && (
-          <div className="text-center py-12 text-gray-500 w-full col-span-2">
-            No items found matching your search.
-          </div>
-        )}
+          );
+        })}
+        {filteredItems?.length === 0 && <div className="text-center py-16 text-gray-400 font-medium w-full col-span-2">No items found matching your search.</div>}
       </div>
 
       <div className="mt-12">
         <TransactionLedger />
       </div>
 
-      {/* --- ADD NEW PRODUCT MODAL --- */}
-      {isAddItemModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-11/12 max-w-6xl shadow-2xl max-h-[90vh] overflow-y-auto border-t-4 border-green-600">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">Add New Product to Catalog</h2>
-            <form onSubmit={handleAddItemSubmit}>
-              
-              {/* Row 1: Basic Details */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
-                <div className="col-span-2 md:col-span-1">
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Product Name *</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.name} onChange={(e) => setAddItemForm({ ...addItemForm, name: e.target.value })} required />
-                </div>
+      {/* ── TRANSACTION MODALS ── */}
+      {selectedItemForStock && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl transform transition-all">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-xl font-black text-gray-900 tracking-tight">Receive Stock</h2>
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-1">{selectedItemForStock.name}</p>
+              </div>
+              <button onClick={() => setSelectedItemForStock(null)} className="text-gray-400 hover:text-gray-600 bg-gray-100 rounded-full p-1.5"><X size={18} /></button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); addStockMutation.mutate({ id: selectedItemForStock._id, payload: { ...addStockForm, quantityToAdd: Number(addStockForm.quantityToAdd) } }); }}>
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">SKU *</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2 uppercase focus:ring-2 focus:ring-green-500" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Destination</label>
+                  <select className="input" value={addStockForm.locationId} onChange={(e) => setAddStockForm({ ...addStockForm, locationId: e.target.value })} required>
+                    <option value="">Select a Location</option>
+                    {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
+                  </select>
                 </div>
-                
-                {/* --- DYNAMIC TYPE DROPDOWN/CREATION --- */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-sm font-medium text-gray-700">Type *</label>
-                    <button type="button" onClick={() => setIsAddingNewType(!isAddingNewType)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                      {isAddingNewType ? "Cancel" : "+ New"}
-                    </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Batch / Lot</label>
+                    <input type="text" className="input" placeholder="Optional" value={addStockForm.batchNumber} onChange={(e) => setAddStockForm({ ...addStockForm, batchNumber: e.target.value })} />
                   </div>
-                  {isAddingNewType ? (
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Expiry</label>
+                    <input type="date" className="input" value={addStockForm.expiryDate} onChange={(e) => setAddStockForm({ ...addStockForm, expiryDate: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pb-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Quantity</label>
+                    <input type="number" step="0.01" min="0.01" className="input font-mono font-bold" value={addStockForm.quantityToAdd} onChange={(e) => setAddStockForm({ ...addStockForm, quantityToAdd: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Unit</label>
+                    <select className="input font-bold" value={addStockForm.unit} onChange={(e) => setAddStockForm({ ...addStockForm, unit: e.target.value })} required>
+                      {renderUnitOptions(selectedItemForStock)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" disabled={addStockMutation.isLoading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/30 border-0">Confirm Receipt</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {selectedItemForIssue && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl transform transition-all">
+             <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-xl font-black text-gray-900 tracking-tight">Issue Stock</h2>
+                <p className="text-xs font-bold text-rose-600 uppercase tracking-widest mt-1">{selectedItemForIssue.name}</p>
+              </div>
+              <button onClick={() => setSelectedItemForIssue(null)} className="text-gray-400 hover:text-gray-600 bg-gray-100 rounded-full p-1.5"><X size={18} /></button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); issueStockMutation.mutate({ id: selectedItemForIssue._id, payload: { ...issueForm, quantityToIssue: Number(issueForm.quantityToIssue) } }); }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Source Location</label>
+                  <select className="input" value={issueForm.locationId} onChange={(e) => setIssueForm({ ...issueForm, locationId: e.target.value })} required>
+                    <option value="">Select Source Location</option>
+                    {selectedItemForIssue.balances.map(b => (
+                      <option key={b._id} value={b.locationId._id}>
+                        {b.locationId.name} {b.batchNumber !== 'DEFAULT-BATCH' ? `[Lot: ${b.batchNumber}] ` : ''}(Avail: {b.quantity})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pb-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Quantity</label>
+                    <input type="number" step="0.01" min="0.01" className="input font-mono font-bold" value={issueForm.quantityToIssue} onChange={(e) => setIssueForm({ ...issueForm, quantityToIssue: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Unit</label>
+                    <select className="input font-bold" value={issueForm.unit} onChange={(e) => setIssueForm({ ...issueForm, unit: e.target.value })} required>
+                      {renderUnitOptions(selectedItemForIssue)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" disabled={issueStockMutation.isLoading} className="btn-primary w-full bg-rose-600 hover:bg-rose-700 shadow-rose-500/30 border-0">Confirm Issue</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {selectedItemForTransfer && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl transform transition-all">
+             <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-xl font-black text-gray-900 tracking-tight">Transfer Stock</h2>
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mt-1">{selectedItemForTransfer.name}</p>
+              </div>
+              <button onClick={() => setSelectedItemForTransfer(null)} className="text-gray-400 hover:text-gray-600 bg-gray-100 rounded-full p-1.5"><X size={18} /></button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); transferStockMutation.mutate({ id: selectedItemForTransfer._id, payload: { ...transferForm, quantity: Number(transferForm.quantity) } }); }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">From Location</label>
+                  <select className="input" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
+                    <option value="">Select Source Location</option>
+                    {selectedItemForTransfer.balances.map(b => (
+                      <option key={b._id} value={b.locationId._id}>
+                        {b.locationId.name} {b.batchNumber !== 'DEFAULT-BATCH' ? `[Lot: ${b.batchNumber}] ` : ''}(Avail: {b.quantity})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">To Location</label>
+                  <select className="input" value={transferForm.destinationLocationId} onChange={(e) => setTransferForm({ ...transferForm, destinationLocationId: e.target.value })} required>
+                    <option value="">Select Destination Location</option>
+                    {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pb-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Quantity</label>
+                    <input type="number" step="0.01" min="0.01" className="input font-mono font-bold" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Unit</label>
+                    <select className="input font-bold" value={transferForm.unit} onChange={(e) => setTransferForm({ ...transferForm, unit: e.target.value })} required>
+                       {renderUnitOptions(selectedItemForTransfer)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" disabled={transferStockMutation.isLoading} className="btn-primary w-full bg-blue-600 hover:bg-blue-700 shadow-blue-500/30 border-0">Confirm Transfer</button>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {/* ── ADD NEW PRODUCT MODAL ── */}
+      {isAddItemModalOpen && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-8 w-11/12 max-w-5xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black text-gray-900 tracking-tight">Add Product to Catalog</h2>
+              <button onClick={() => setIsAddItemModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 rounded-full p-2"><X size={20} /></button>
+            </div>
+            
+            <form onSubmit={handleAddItemSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Product Name *</label>
+                  <input type="text" className="input" value={addItemForm.name} onChange={(e) => setAddItemForm({ ...addItemForm, name: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">SKU *</label>
+                  <input type="text" className="input font-mono uppercase" value={addItemForm.sku} onChange={(e) => setAddItemForm({ ...addItemForm, sku: e.target.value.toUpperCase() })} required />
+                </div>
+                <div>
+                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex justify-between">Type * <span onClick={() => setIsAddingNewType(!isAddingNewType)} className="text-blue-500 cursor-pointer">{isAddingNewType ? "Cancel" : "+ New"}</span></label>
+                   {isAddingNewType ? (
                     <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        className="w-full border border-indigo-300 rounded p-2 focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="New Type Name" 
-                        value={newTypeName} 
-                        onChange={(e) => setNewTypeName(e.target.value)} 
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => newTypeName.trim() && createTypeMutation.mutate(newTypeName)} 
-                        disabled={createTypeMutation.isLoading || !newTypeName.trim()}
-                        className="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 text-sm font-medium disabled:opacity-50"
-                      >
-                        Add
-                      </button>
+                      <input type="text" className="input" placeholder="New Type" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} />
+                      <button type="button" onClick={() => newTypeName.trim() && createTypeMutation.mutate(newTypeName)} className="btn-primary py-1 px-3">Add</button>
                     </div>
                   ) : (
-                    <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.typeId} onChange={(e) => setAddItemForm({ ...addItemForm, typeId: e.target.value })} required>
+                    <select className="input cursor-pointer" value={addItemForm.typeId} onChange={(e) => setAddItemForm({ ...addItemForm, typeId: e.target.value })} required>
                       <option value="">-- Select Type --</option>
                       {itemTypes.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
                     </select>
                   )}
                 </div>
-
-                {/* --- DYNAMIC CATEGORY DROPDOWN/CREATION --- */}
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-sm font-medium text-gray-700">Category</label>
-                    <button type="button" onClick={() => setIsAddingNewCategory(!isAddingNewCategory)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                      {isAddingNewCategory ? "Cancel" : "+ New"}
-                    </button>
-                  </div>
-                  {isAddingNewCategory ? (
+                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex justify-between">Category <span onClick={() => setIsAddingNewCategory(!isAddingNewCategory)} className="text-blue-500 cursor-pointer">{isAddingNewCategory ? "Cancel" : "+ New"}</span></label>
+                   {isAddingNewCategory ? (
                     <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        className="w-full border border-indigo-300 rounded p-2 focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="New Category (Root)" 
-                        value={newCategoryName} 
-                        onChange={(e) => setNewCategoryName(e.target.value)} 
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => newCategoryName.trim() && createCategoryMutation.mutate(newCategoryName)} 
-                        disabled={createCategoryMutation.isLoading || !newCategoryName.trim()}
-                        className="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 text-sm font-medium disabled:opacity-50"
-                      >
-                        Add
-                      </button>
+                      <input type="text" className="input" placeholder="New Cat" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} />
+                      <button type="button" onClick={() => newCategoryName.trim() && createCategoryMutation.mutate(newCategoryName)} className="btn-primary py-1 px-3">Add</button>
                     </div>
                   ) : (
-                    <select className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-500" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
+                    <select className="input cursor-pointer" value={addItemForm.categoryId} onChange={(e) => setAddItemForm({ ...addItemForm, categoryId: e.target.value })}>
                       <option value="">-- No Category --</option>
                       {categories.map(c => <option key={c._id} value={c._id}>{c.parentId ? `↳ ${c.name}` : c.name}</option>)}
                     </select>
@@ -542,253 +499,69 @@ export default function Inventory() {
                 </div>
               </div>
 
-              {/* Row 2: Specs & Pricing */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Brand / Mfg</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2" value={addItemForm.productCompanyName} onChange={(e) => setAddItemForm({ ...addItemForm, productCompanyName: e.target.value })} />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Brand / Mfg</label>
+                  <input type="text" className="input" value={addItemForm.productCompanyName} onChange={(e) => setAddItemForm({ ...addItemForm, productCompanyName: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Standard Cost/Unit</label>
-                  <input type="number" min="0" step="0.01" className="w-full border border-gray-300 rounded p-2" value={addItemForm.costPerUnit} onChange={(e) => setAddItemForm({ ...addItemForm, costPerUnit: e.target.value })} />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Standard Cost/Unit</label>
+                  <input type="number" min="0" step="0.01" className="input font-mono" value={addItemForm.costPerUnit} onChange={(e) => setAddItemForm({ ...addItemForm, costPerUnit: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Shelf Life</label>
-                  <input type="text" placeholder="e.g. 12 months" className="w-full border border-gray-300 rounded p-2" value={addItemForm.shelfLife} onChange={(e) => setAddItemForm({ ...addItemForm, shelfLife: e.target.value })} />
-                </div>
-                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Base Unit *</label>
-                  <select className="w-full border border-gray-300 rounded p-2 font-medium bg-gray-50" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value })} required>
-                    <option value="">-- Select Base Unit --</option>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Base Unit *</label>
+                  <select className="input cursor-pointer" value={addItemForm.baseUnit} onChange={(e) => setAddItemForm({ ...addItemForm, baseUnit: e.target.value })} required>
+                    <option value="">Select Base Unit</option>
                     {units.map(u => <option key={u._id} value={u.name}>{u.name} ({u.abbreviation})</option>)}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Shelf Life</label>
+                  <input type="text" placeholder="e.g. 12 months" className="input" value={addItemForm.shelfLife} onChange={(e) => setAddItemForm({ ...addItemForm, shelfLife: e.target.value })} />
+                </div>
               </div>
 
-              {/* Row 3: Advanced Details (Split Dimensions & Alerts) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-gray-50 p-4 rounded border border-gray-200">
-                  <h4 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Dimensions (Meters)</h4>
+                <div className="bg-gray-50/50 p-5 rounded-xl border border-gray-200/60">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-200/60 pb-2">Dimensions (Meters)</h4>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-medium mb-1">Length</label>
-                      <input type="number" step="0.01" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimLength} onChange={(e) => setAddItemForm({ ...addItemForm, dimLength: e.target.value })} />
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Length</label>
+                      <input type="number" step="0.01" min="0" className="input" value={addItemForm.dimLength} onChange={(e) => setAddItemForm({ ...addItemForm, dimLength: e.target.value })} />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium mb-1">Breadth / Width</label>
-                      <input type="number" step="0.01" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimBreadth} onChange={(e) => setAddItemForm({ ...addItemForm, dimBreadth: e.target.value })} />
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Breadth / Width</label>
+                      <input type="number" step="0.01" min="0" className="input" value={addItemForm.dimBreadth} onChange={(e) => setAddItemForm({ ...addItemForm, dimBreadth: e.target.value })} />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium mb-1">Height</label>
-                      <input type="number" step="0.01" min="0" className="w-full border border-gray-300 rounded p-2" value={addItemForm.dimHeight} onChange={(e) => setAddItemForm({ ...addItemForm, dimHeight: e.target.value })} />
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Height</label>
+                      <input type="number" step="0.01" min="0" className="input" value={addItemForm.dimHeight} onChange={(e) => setAddItemForm({ ...addItemForm, dimHeight: e.target.value })} />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-orange-50 p-4 rounded border border-orange-200">
-                  <h4 className="text-sm font-bold text-orange-800 mb-3 border-b border-orange-200 pb-2">Stock Alert Thresholds (Base Units)</h4>
+                <div className="bg-orange-50/50 p-5 rounded-xl border border-orange-200/60">
+                  <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-3 border-b border-orange-200/60 pb-2">Stock Alert Thresholds</h4>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-medium mb-1 text-orange-700">Orange (Warning)</label>
-                      <input type="number" min="0" className="w-full border border-orange-300 rounded p-2" value={addItemForm.alertOrange} onChange={(e) => setAddItemForm({ ...addItemForm, alertOrange: e.target.value })} required />
+                      <label className="block text-[10px] font-bold text-orange-600 mb-1">Orange (Warning)</label>
+                      <input type="number" min="0" className="input border-orange-200 focus:border-orange-400" value={addItemForm.alertOrange} onChange={(e) => setAddItemForm({ ...addItemForm, alertOrange: e.target.value })} required />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium mb-1 text-red-600">Red (Action Req)</label>
-                      <input type="number" min="0" className="w-full border border-red-300 rounded p-2" value={addItemForm.alertRed} onChange={(e) => setAddItemForm({ ...addItemForm, alertRed: e.target.value })} required />
+                      <label className="block text-[10px] font-bold text-rose-600 mb-1">Red (Action Req)</label>
+                      <input type="number" min="0" className="input border-rose-200 focus:border-rose-400" value={addItemForm.alertRed} onChange={(e) => setAddItemForm({ ...addItemForm, alertRed: e.target.value })} required />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium mb-1 text-red-800">Critical (Outage)</label>
-                      <input type="number" min="0" className="w-full border border-red-500 rounded p-2 bg-red-50" value={addItemForm.alertCritical} onChange={(e) => setAddItemForm({ ...addItemForm, alertCritical: e.target.value })} required />
+                      <label className="block text-[10px] font-bold text-red-700 mb-1">Critical (Outage)</label>
+                      <input type="number" min="0" className="input border-red-300 bg-red-50 focus:border-red-500 font-bold text-red-700" value={addItemForm.alertCritical} onChange={(e) => setAddItemForm({ ...addItemForm, alertCritical: e.target.value })} required />
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Row 4: Multi-Supplier Configuration */}
-              <div className="bg-blue-50 p-4 rounded border border-blue-200 mb-6">
-                <div className="flex justify-between items-center mb-3 border-b border-blue-200 pb-2">
-                  <h4 className="text-sm font-bold text-blue-800">Supplier Configurations</h4>
-                  <button type="button" onClick={addSupplierRow} className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 shadow-sm">
-                    + Add Supplier
-                  </button>
-                </div>
-                
-                {addItemForm.suppliers.map((supplier, index) => (
-                  <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end mb-3 bg-white p-3 rounded shadow-sm border border-blue-100">
-                    <div className="col-span-4">
-                      <label className="block text-xs font-medium mb-1 text-blue-700">Supplier ID (ObjectId) *</label>
-                      <input 
-                        type="text" 
-                        className="w-full border border-gray-300 rounded p-2 text-sm" 
-                        placeholder="Paste DB ID"
-                        value={supplier.supplierId} 
-                        onChange={(e) => handleSupplierChange(index, 'supplierId', e.target.value)} 
-                      />
-                    </div>
-                    <div className="col-span-4">
-                      <label className="block text-xs font-medium mb-1 text-blue-700">Contact/Ref</label>
-                      <input 
-                        type="text" 
-                        className="w-full border border-gray-300 rounded p-2 text-sm" 
-                        placeholder="Optional"
-                        value={supplier.contact} 
-                        onChange={(e) => handleSupplierChange(index, 'contact', e.target.value)} 
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <label className="block text-xs font-medium mb-1 text-blue-700">Base Rate (₹) *</label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        min="0" 
-                        className="w-full border border-gray-300 rounded p-2 text-sm" 
-                        placeholder="0.00"
-                        value={supplier.baseRate} 
-                        onChange={(e) => handleSupplierChange(index, 'baseRate', e.target.value)} 
-                      />
-                    </div>
-                    <div className="col-span-1 flex justify-end">
-                      {addItemForm.suppliers.length > 1 && (
-                        <button type="button" onClick={() => removeSupplierRow(index)} className="bg-red-100 text-red-600 hover:bg-red-200 p-2 rounded mb-1">
-                          ✖
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
               </div>
               
-              <div className="flex justify-end gap-3 mt-6 border-t pt-4">
-                <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="px-6 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium transition-colors">Cancel</button>
-                <button type="submit" disabled={addItemMutation.isLoading} className="bg-green-600 text-white px-8 py-2 rounded hover:bg-green-700 font-bold shadow-md transition-all">Create Product</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* RECEIVE, ISSUE, AND TRANSFER MODALS */}
-      {selectedItemForStock && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-gray-800">
-            <h2 className="text-xl font-bold mb-4">Receive Stock: {selectedItemForStock.name}</h2>
-            <form onSubmit={handleAddStockSubmit}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Destination Location</label>
-                <select className="w-full border border-gray-300 rounded p-2" value={addStockForm.locationId} onChange={(e) => setAddStockForm({ ...addStockForm, locationId: e.target.value })} required>
-                  <option value="">-- Select a Location --</option>
-                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Batch / Lot No.</label>
-                  <input type="text" className="w-full border border-gray-300 rounded p-2" placeholder="Optional" value={addStockForm.batchNumber} onChange={(e) => setAddStockForm({ ...addStockForm, batchNumber: e.target.value })} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Expiry Date</label>
-                  <input type="date" className="w-full border border-gray-300 rounded p-2" value={addStockForm.expiryDate} onChange={(e) => setAddStockForm({ ...addStockForm, expiryDate: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Quantity</label>
-                  <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={addStockForm.quantityToAdd} onChange={(e) => setAddStockForm({ ...addStockForm, quantityToAdd: e.target.value })} required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Unit</label>
-                  <select className="w-full border border-gray-300 rounded p-2" value={addStockForm.unit} onChange={(e) => setAddStockForm({ ...addStockForm, unit: e.target.value })} required>
-                    {renderUnitOptions(selectedItemForStock)}
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => { setSelectedItemForStock(null); setAddStockForm({ locationId: '', quantityToAdd: '', unit: '', batchNumber: '', expiryDate: '' }); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={addStockMutation.isLoading} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-900">Confirm Receipt</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {selectedItemForIssue && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-red-600">
-            <h2 className="text-xl font-bold mb-4">Issue Stock: {selectedItemForIssue.name}</h2>
-            <div className="bg-red-50 text-red-700 text-xs p-3 rounded mb-4 border border-red-200">
-              <span className="font-bold uppercase tracking-wider">Note:</span> Stock will be automatically deducted using FIFO.
-            </div>
-            <form onSubmit={handleIssueSubmit}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Source Location</label>
-                <select className="w-full border border-gray-300 rounded p-2" value={issueForm.locationId} onChange={(e) => setIssueForm({ ...issueForm, locationId: e.target.value })} required>
-                  <option value="">-- Select a Location --</option>
-                  {selectedItemForIssue.balances.map(b => (
-                    <option key={b._id} value={b.locationId._id}>
-                      {b.locationId.name} {b.batchNumber !== 'DEFAULT-BATCH' ? `[Lot: ${b.batchNumber}] ` : ''}(Avail: {b.quantity} {selectedItemForIssue.baseUnit})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Quantity</label>
-                  <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={issueForm.quantityToIssue} onChange={(e) => setIssueForm({ ...issueForm, quantityToIssue: e.target.value })} required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Unit</label>
-                  <select className="w-full border border-gray-300 rounded p-2" value={issueForm.unit} onChange={(e) => setIssueForm({ ...issueForm, unit: e.target.value })} required>
-                    {renderUnitOptions(selectedItemForIssue)}
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setSelectedItemForIssue(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={issueStockMutation.isLoading} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Confirm Issue</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {selectedItemForTransfer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl border-t-4 border-blue-600">
-            <h2 className="text-xl font-bold mb-4">Transfer Stock: {selectedItemForTransfer.name}</h2>
-            <form onSubmit={handleTransferSubmit}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">From (Source)</label>
-                <select className="w-full border border-gray-300 rounded p-2" value={transferForm.sourceLocationId} onChange={(e) => setTransferForm({ ...transferForm, sourceLocationId: e.target.value })} required>
-                  <option value="">-- Select Source --</option>
-                  {selectedItemForTransfer.balances.map(b => (
-                    <option key={b._id} value={b.locationId._id}>
-                      {b.locationId.name} {b.batchNumber !== 'DEFAULT-BATCH' ? `[Lot: ${b.batchNumber}] ` : ''}(Avail: {b.quantity} {selectedItemForTransfer.baseUnit})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">To (Destination)</label>
-                <select className="w-full border border-gray-300 rounded p-2" value={transferForm.destinationLocationId} onChange={(e) => setTransferForm({ ...transferForm, destinationLocationId: e.target.value })} required>
-                  <option value="">-- Select Destination --</option>
-                  {locations?.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                  <input type="number" step="0.01" min="0.01" className="w-full border border-gray-300 rounded p-2" value={transferForm.quantity} onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })} required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                  <select className="w-full border border-gray-300 rounded p-2" value={transferForm.unit} onChange={(e) => setTransferForm({ ...transferForm, unit: e.target.value })} required>
-                     {renderUnitOptions(selectedItemForTransfer)}
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setSelectedItemForTransfer(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" disabled={transferStockMutation.isLoading} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Confirm Transfer</button>
+              <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
+                <button type="button" onClick={() => setIsAddItemModalOpen(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" disabled={addItemMutation.isLoading} className="btn-primary bg-blue-600 hover:bg-blue-700 shadow-blue-500/30">Create Product</button>
               </div>
             </form>
           </div>
@@ -796,10 +569,7 @@ export default function Inventory() {
       )}
 
       {isScannerOpen && (
-        <BarcodeScanner 
-          onScanSuccess={handleScanSuccess} 
-          onClose={() => setIsScannerOpen(false)} 
-        />
+        <BarcodeScanner onScanSuccess={handleScanSuccess} onClose={() => setIsScannerOpen(false)} />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { Toaster, toast } from 'sonner';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -16,7 +17,7 @@ import Procurement from './pages/Procurement';
 
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
-import {useSocketStore} from './store/socketStore'; // ✅ make sure this exists
+import { useSocketStore } from './store/socketStore'; 
 import CycleCounts from './pages/CycleCounts';
 import Bom from './pages/BOM';
 
@@ -32,14 +33,17 @@ const queryClient = new QueryClient({
 
 function App() {
 
-  // ✅ FIX: Hook must be inside component
   useEffect(() => {
     const socket = useSocketStore.getState().socket;
 
     if (!socket) return;
 
     const handler = (data) => {
-      alert(`PROCUREMENT ALERT from ${data.sender}:\n\n${data.message}`);
+      // Replaced the native alert() with a modern toast notification
+      toast.info(`Procurement Alert: ${data.sender}`, {
+        description: data.message,
+        duration: 6000,
+      });
     };
 
     socket.on('custom_alert', handler);
@@ -51,6 +55,17 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* ── Global Toast Container Added Here ── */}
+      <Toaster 
+        position="top-right" 
+        richColors 
+        closeButton 
+        theme="light" 
+        toastOptions={{
+          style: { backdropFilter: 'blur(10px)', background: 'rgba(255, 255, 255, 0.9)' }
+        }} 
+      />
+      
       <BrowserRouter>
         <Routes>
 

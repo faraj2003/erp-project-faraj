@@ -1,23 +1,118 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 /* ── Enable Manual Dark Mode Toggle in Tailwind v4 ── */
 @variant dark (&:where(.dark, .dark *));
 
-/* ── Shared utility classes used across all pages ── */
+/* ── Global Base Styles & Dark Mode Auto-Adapt ── */
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply antialiased selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-900/50 dark:selection:text-blue-100;
+    /* Ensure any un-styled text defaults to bright gray in dark mode */
+    .dark & { color: #f3f4f6; } 
+  }
+
+  /* Custom Modern Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-300 dark:bg-gray-600 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-400 dark:bg-gray-500; }
+
+  /* ── HIGH-CONTRAST DARK MODE OVERRIDES ── */
+  .dark ::placeholder { 
+    color: #9ca3af !important; 
+    opacity: 1 !important; 
+  }
+
+  /* 1. Grayscales & Black */
+  .dark .text-black, .dark .text-gray-900, .dark .text-gray-800 { 
+    color: #ffffff !important; 
+    -webkit-font-smoothing: antialiased !important; 
+  }
+  .dark .text-gray-700, .dark .text-gray-600 { color: #f3f4f6 !important; }
+  .dark .text-gray-500, .dark .text-gray-400 { color: #d1d5db !important; }
+
+  /* 2. Status Text Colors (Brightened for visibility) */
+  .dark .text-blue-800, .dark .text-blue-700, .dark .text-blue-600 { color: #60a5fa !important; }
+  .dark .text-emerald-800, .dark .text-emerald-700, .dark .text-emerald-600, .dark .text-green-800, .dark .text-green-700 { color: #4ade80 !important; }
+  .dark .text-red-800, .dark .text-red-700, .dark .text-red-600, .dark .text-rose-800, .dark .text-rose-700, .dark .text-rose-600 { color: #f87171 !important; }
+  .dark .text-amber-800, .dark .text-amber-700, .dark .text-yellow-800, .dark .text-yellow-700, .dark .text-orange-700, .dark .text-orange-600 { color: #fbbf24 !important; }
+  .dark .text-indigo-800, .dark .text-indigo-700, .dark .text-purple-800, .dark .text-purple-700 { color: #a78bfa !important; }
+  
+  /* 3. Solid Layout Backgrounds */
+  .dark .bg-white { background-color: #0f172a !important; }
+  .dark .bg-gray-50, .dark .bg-gray-100 { background-color: #1e293b !important; }
+  
+  .dark .bg-blue-50, .dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.15) !important; }
+  .dark .bg-emerald-50, .dark .bg-emerald-100, .dark .bg-green-50 { background-color: rgba(16, 185, 129, 0.15) !important; }
+  .dark .bg-red-50, .dark .bg-red-100, .dark .bg-rose-50 { background-color: rgba(239, 68, 68, 0.15) !important; }
+  .dark .bg-amber-50, .dark .bg-yellow-50, .dark .bg-orange-50 { background-color: rgba(245, 158, 11, 0.15) !important; }
+  .dark .bg-indigo-50, .dark .bg-purple-50 { background-color: rgba(99, 102, 241, 0.15) !important; }
+
+  /* 4. Translucent Backgrounds (FIXES THE HIDDEN TEXT BUG) */
+  .dark .bg-white\/80 { background-color: rgba(15, 23, 42, 0.8) !important; }
+  .dark .bg-white\/50 { background-color: rgba(15, 23, 42, 0.5) !important; }
+  .dark .bg-gray-50\/50 { background-color: rgba(30, 41, 59, 0.5) !important; }
+  .dark .bg-gray-100\/80 { background-color: rgba(30, 41, 59, 0.8) !important; }
+  
+  .dark .bg-blue-50\/50 { background-color: rgba(59, 130, 246, 0.15) !important; }
+  .dark .bg-emerald-50\/50, .dark .bg-green-50\/50 { background-color: rgba(16, 185, 129, 0.15) !important; }
+  .dark .bg-red-50\/50, .dark .bg-rose-50\/50 { background-color: rgba(244, 63, 94, 0.15) !important; }
+  .dark .bg-amber-50\/50, .dark .bg-orange-50\/50 { background-color: rgba(245, 158, 11, 0.15) !important; }
+  .dark .bg-indigo-50\/50, .dark .bg-purple-50\/50 { background-color: rgba(99, 102, 241, 0.15) !important; }
+
+  /* 5. Hover States (Fixes text vanishing when mousing over rows) */
+  .dark .hover\:bg-gray-50\/50:hover { background-color: rgba(30, 41, 59, 0.5) !important; }
+  .dark .hover\:bg-gray-50:hover, .dark .hover\:bg-gray-100:hover { background-color: #1e293b !important; }
+
+  /* 6. Borders */
+  .dark .border-gray-200, .dark .border-gray-300 { border-color: #334155 !important; }
+  .dark .border-gray-100 { border-color: #1e293b !important; }
+  .dark .border-gray-200\/60, .dark .border-gray-200\/80 { border-color: rgba(51, 65, 85, 0.6) !important; }
+
+  .dark .border-blue-100, .dark .border-blue-200 { border-color: rgba(59, 130, 246, 0.3) !important; }
+  .dark .border-emerald-100, .dark .border-green-100 { border-color: rgba(16, 185, 129, 0.3) !important; }
+  .dark .border-red-100, .dark .border-rose-100 { border-color: rgba(239, 68, 68, 0.3) !important; }
+  .dark .border-amber-100, .dark .border-orange-100 { border-color: rgba(245, 158, 11, 0.3) !important; }
+  .dark .border-indigo-100, .dark .border-purple-100 { border-color: rgba(99, 102, 241, 0.3) !important; }
+}
+
+/* ── Shared Utility Classes ── */
 @layer components {
   .input {
-    @apply w-full border border-gray-300 dark:border-gray-600 rounded-lg py-2 px-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white dark:bg-gray-800;
+    @apply w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50 rounded-lg py-2.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 shadow-sm hover:border-gray-300 dark:hover:border-gray-600;
   }
 
   .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-150 disabled:cursor-not-allowed;
+    @apply bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:bg-blue-400 disabled:active:scale-100 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-semibold py-2 px-4 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-[0.98] text-gray-700 dark:text-gray-200 text-sm font-semibold py-2.5 px-4 rounded-lg border border-gray-200 dark:border-gray-700 transition-all duration-200 shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .err {
-    @apply text-xs text-red-500 dark:text-red-400 mt-1;
+    @apply text-xs text-red-500 dark:text-red-400 mt-1.5 font-medium flex items-center gap-1;
+  }
+
+  /* Dark Mode Glass Classes */
+  .glass-card {
+    @apply bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border border-gray-200/60 dark:border-gray-800 shadow-sm rounded-2xl;
+  }
+  
+  .glass-panel {
+    @apply bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/50 rounded-xl;
+  }
+
+  .text-heading {
+    @apply text-gray-900 dark:text-white font-black tracking-tight;
+  }
+  
+  .text-muted {
+    @apply text-gray-500 dark:text-gray-400 font-medium;
   }
 }
