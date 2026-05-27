@@ -1,6 +1,6 @@
 # 🏭 FactoryFlow ERP
 
-A **full-stack, production-grade Enterprise Resource Planning (ERP) system** built for modern factory operations.
+A **full-stack, production-grade Enterprise Resource Planning (ERP) system** built for modern factory operations.  
 FactoryFlow helps manage **inventory, manufacturing orders, procurement, users, analytics, and real-time warehouse activity** from a single platform.
 
 Built with a modern JavaScript stack featuring:
@@ -129,6 +129,50 @@ FactoryFlow uses **Socket.io** to provide:
 - Live inventory updates
 - Real-time stock synchronization
 - Instant UI refresh across connected clients
+
+---
+
+# 🔑 Demo Login Credentials
+
+To explore FactoryFlow after deployment, use the following demo admin account:
+
+```txt
+Email:    admin@factoryflow.com
+Password: AdminPassword123
+```
+
+### 👨‍💼 Admin Access Includes
+
+Using the admin account, you can:
+
+- Manage inventory
+- Create manufacturing orders
+- Access analytics dashboards
+- Manage procurement workflows
+- View all warehouse locations
+- Create and manage users
+- Assign roles and permissions
+
+### ➕ Create Your Own Users
+
+After logging in as admin, you can create additional users directly from the application:
+
+```txt
+Admin Panel → Users → Create User
+```
+
+You can assign roles such as:
+
+- `manager`
+- `staff`
+- `shop_worker`
+- `procurement_manager`
+- `dispatch_manager`
+
+This allows recruiters, testers, and developers to explore different permission levels within the ERP system.
+
+> ⚠️ These demo credentials are intended for evaluation purposes only.  
+> Change the admin password before using FactoryFlow in a real production environment.
 
 ---
 
