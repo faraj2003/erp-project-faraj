@@ -78,7 +78,10 @@ const createUser = async (overrides = {}) => {
   let locationId = overrides.locationId;
   const role = overrides.role || "staff";
 
-  if (!locationId && role === "staff") {
+  // FIX: Assign a default location to both staff AND manager roles.
+  // Without a locationId, createOrder throws "A Shop/Location must be
+  // assigned to this order" when the manager's locationId is null.
+  if (!locationId && (role === "staff" || role === "manager")) {
     const loc = await getOrCreateDefaultLocation();
     locationId = loc._id;
   }
@@ -114,7 +117,7 @@ const createItem = async (overrides = {}) => {
       itemId: item._id,
       locationId: location._id,
       quantity: currentStock,
-      companyId: TEST_COMPANY_ID, // ← ADDED
+      companyId: TEST_COMPANY_ID,
     });
   }
 
@@ -151,4 +154,6 @@ module.exports = {
   createUser,
   createItem,
   createOrder,
+  TEST_COMPANY_ID, // FIX: export so orders.test.js can use it for StockBalance queries
+  getOrCreateDefaultLocation, // FIX: export so orders.test.js can look up the test location
 };

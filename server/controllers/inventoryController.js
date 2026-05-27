@@ -5,6 +5,15 @@ const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
 const Adjustment = require("../models/Adjustment");
 
+// FIX: Allowed item types — used to validate the ?type= query param
+const VALID_ITEM_TYPES = [
+  "raw_material",
+  "finished_good",
+  "semi_finished",
+  "consumable",
+  "packaging",
+];
+
 // Helper function to calculate multiplier based on requested unit
 const getMultiplier = (item, requestedUnit) => {
   if (
@@ -139,8 +148,16 @@ exports.getItems = async (req, res, next) => {
     const { type, search } = req.query;
     const companyId = req.companyId;
 
+    // FIX: Validate the type query param before querying — reject unknown types
+    if (type && !VALID_ITEM_TYPES.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid type filter: '${type}'. Must be one of: ${VALID_ITEM_TYPES.join(", ")}`,
+      });
+    }
+
     const query = { companyId, isArchived: false };
-    if (type) query.type = type; // Dynamic type checking
+    if (type) query.type = type;
 
     if (search) {
       query.$or = [
@@ -310,12 +327,10 @@ exports.addStock = async (req, res, next) => {
       !globalRoles.includes(req.user.role) &&
       req.user.locationId?.toString() !== locationId.toString()
     ) {
-      return res
-        .status(403)
-        .json({
-          message:
-            "Security Violation: You can only perform actions for your assigned warehouse/location.",
-        });
+      return res.status(403).json({
+        message:
+          "Security Violation: You can only perform actions for your assigned warehouse/location.",
+      });
     }
 
     const item = await Item.findOne({ _id: itemId, companyId }).lean();
@@ -398,12 +413,10 @@ exports.issueStock = async (req, res, next) => {
       !globalRoles.includes(req.user.role) &&
       req.user.locationId?.toString() !== locationId.toString()
     ) {
-      return res
-        .status(403)
-        .json({
-          message:
-            "Security Violation: You can only perform actions for your assigned warehouse/location.",
-        });
+      return res.status(403).json({
+        message:
+          "Security Violation: You can only perform actions for your assigned warehouse/location.",
+      });
     }
 
     const item = await Item.findOne({ _id: itemId, companyId }).lean();
@@ -499,12 +512,10 @@ exports.transferStock = async (req, res, next) => {
       !globalRoles.includes(req.user.role) &&
       req.user.locationId?.toString() !== sourceLocationId.toString()
     ) {
-      return res
-        .status(403)
-        .json({
-          message:
-            "Security Violation: You can only perform actions for your assigned warehouse/location.",
-        });
+      return res.status(403).json({
+        message:
+          "Security Violation: You can only perform actions for your assigned warehouse/location.",
+      });
     }
 
     const item = await Item.findOne({ _id: itemId, companyId }).lean();
@@ -589,11 +600,9 @@ exports.transferStock = async (req, res, next) => {
       });
     }
 
-    res
-      .status(200)
-      .json({
-        message: "Stock transferred successfully maintaining batch lineage.",
-      });
+    res.status(200).json({
+      message: "Stock transferred successfully maintaining batch lineage.",
+    });
   } catch (error) {
     next(error);
   }
@@ -644,12 +653,10 @@ exports.createAdjustment = async (req, res, next) => {
       !globalRoles.includes(req.user.role) &&
       req.user.locationId?.toString() !== locationId.toString()
     ) {
-      return res
-        .status(403)
-        .json({
-          message:
-            "Security Violation: You can only perform actions for your assigned warehouse/location.",
-        });
+      return res.status(403).json({
+        message:
+          "Security Violation: You can only perform actions for your assigned warehouse/location.",
+      });
     }
 
     const status = submitForReview ? "pending" : "draft";
@@ -735,11 +742,9 @@ exports.reviewAdjustment = async (req, res, next) => {
       });
     } else {
       if (balance.quantity + adjustment.quantityChange < 0) {
-        return res
-          .status(400)
-          .json({
-            message: "Cannot approve: Insufficient stock for this deduction.",
-          });
+        return res.status(400).json({
+          message: "Cannot approve: Insufficient stock for this deduction.",
+        });
       }
       balance.quantity += adjustment.quantityChange;
       await balance.save();
@@ -757,13 +762,11 @@ exports.reviewAdjustment = async (req, res, next) => {
       performedBy: req.user._id,
     });
 
-    res
-      .status(200)
-      .json({
-        message: "Adjustment approved and stock updated",
-        adjustment,
-        balance,
-      });
+    res.status(200).json({
+      message: "Adjustment approved and stock updated",
+      adjustment,
+      balance,
+    });
   } catch (error) {
     next(error);
   }
@@ -795,7 +798,9 @@ exports.getLowStockItems = async (req, res, next) => {
         const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
         return { ...item, currentStock: totalStock };
       })
-      .filter((item) => item.currentStock <= (item.alertLevels?.red || 0));
+      // FIX: Use minStockLevel instead of alertLevels.red, and strict < not <=
+      // so that an item with currentStock === minStockLevel is NOT flagged
+      .filter((item) => item.currentStock < (item.minStockLevel || 0));
 
     res.status(200).json({
       success: true,

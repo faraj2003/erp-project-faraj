@@ -8,6 +8,7 @@ const request = require("supertest");
 const mongoose = require("mongoose");
 const Transaction = require("../models/Transaction");
 const Item = require("../models/Item");
+const StockBalance = require("../models/StockBalance"); // FIX: import StockBalance
 const {
   connectTestDB,
   disconnectTestDB,
@@ -18,6 +19,7 @@ const {
   createUser,
   createItem,
   createOrder,
+  TEST_COMPANY_ID, // FIX: import so we can scope StockBalance queries
 } = require("./helpers/setup");
 
 let app;
@@ -34,6 +36,16 @@ afterAll(async () => {
 afterEach(async () => {
   await clearCollections();
 });
+
+// FIX: Helper — sum all StockBalance quantities for a given item.
+// The Item model has no currentStock field; stock lives in StockBalance docs.
+const getStockTotal = async (itemId) => {
+  const balances = await StockBalance.find({
+    itemId,
+    companyId: TEST_COMPANY_ID,
+  });
+  return balances.reduce((sum, b) => sum + b.quantity, 0);
+};
 
 // ── GET /api/orders ───────────────────────────────────────────────
 
@@ -207,7 +219,7 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     const rawMat = await createItem({
       sku: "RM-TX-001",
       type: "raw_material",
-      currentStock: 100,
+      currentStock: 100, // stored as StockBalance
       minStockLevel: 5,
     });
     const finGood = await createItem({
@@ -231,11 +243,9 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe("Completed");
 
-    // Verify stock was correctly adjusted in DB
-    const updatedRaw = await Item.findById(rawMat._id);
-    const updatedFin = await Item.findById(finGood._id);
-    expect(updatedRaw.currentStock).toBe(70); // 100 - 30
-    expect(updatedFin.currentStock).toBe(10); // 0 + 10
+    // FIX: Verify stock via StockBalance, not Item.currentStock (which doesn't exist on the model)
+    expect(await getStockTotal(rawMat._id)).toBe(70); // 100 - 30
+    expect(await getStockTotal(finGood._id)).toBe(10); // 0 + 10
 
     // Verify audit log was written — 1 deduction + 1 addition
     const transactions = await Transaction.find({ orderId: order._id });
@@ -254,7 +264,7 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
     const rawMat = await createItem({
       sku: "RM-LOW-001",
       type: "raw_material",
-      currentStock: 20,
+      currentStock: 20, // stored as StockBalance
       minStockLevel: 5,
     });
     const finGood = await createItem({
@@ -281,11 +291,9 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
 
     // ── THE CRITICAL ROLLBACK ASSERTIONS ──
 
-    // Stock must be completely unchanged after the failed transaction
-    const rawAfter = await Item.findById(rawMat._id);
-    const finAfter = await Item.findById(finGood._id);
-    expect(rawAfter.currentStock).toBe(20); // unchanged
-    expect(finAfter.currentStock).toBe(0); // unchanged — outputs were NOT applied
+    // FIX: Read stock from StockBalance, not Item.currentStock
+    expect(await getStockTotal(rawMat._id)).toBe(20); // unchanged
+    expect(await getStockTotal(finGood._id)).toBe(0); // unchanged — outputs were NOT applied
 
     // NO audit log records should exist — transaction was fully rolled back
     const transactions = await Transaction.find({ orderId: order._id });
@@ -329,11 +337,10 @@ describe("PATCH /api/orders/:id/status — ACID Transaction", () => {
 
     expect(res.status).toBe(400);
 
+    // FIX: Read stock from StockBalance, not Item.currentStock
     // Both raw material stocks must be unchanged (first deduction also rolled back)
-    const rm1After = await Item.findById(rawMat1._id);
-    const rm2After = await Item.findById(rawMat2._id);
-    expect(rm1After.currentStock).toBe(100); // rolled back
-    expect(rm2After.currentStock).toBe(5); // unchanged
+    expect(await getStockTotal(rawMat1._id)).toBe(100); // rolled back
+    expect(await getStockTotal(rawMat2._id)).toBe(5); // unchanged
 
     // Zero audit logs
     const transactions = await Transaction.find({ orderId: order._id });

@@ -96,6 +96,13 @@ const itemSchema = new mongoose.Schema(
       critical: { type: Number, required: true, default: 0, min: 0 },
     },
 
+    // FIX: Added minStockLevel — used by getLowStockItems and tests
+    minStockLevel: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     costPerUnit: {
       type: Number,
       default: 0,

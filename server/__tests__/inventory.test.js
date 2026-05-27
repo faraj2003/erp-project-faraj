@@ -107,7 +107,7 @@ describe("POST /api/inventory", () => {
         name: "Item",
         type: "raw_material",
         minStockLevel: 10,
-        unit: "kg",
+        baseUnit: "kg", // FIX: was unit: "kg"
       });
 
     expect(res.status).toBe(403);
@@ -125,7 +125,7 @@ describe("POST /api/inventory", () => {
         name: "Steel Rods",
         type: "raw_material",
         minStockLevel: 50,
-        unit: "kg",
+        baseUnit: "kg", // FIX: was unit: "kg"
       });
 
     expect(res.status).toBe(201);
@@ -156,7 +156,7 @@ describe("POST /api/inventory", () => {
       name: "Item",
       type: "raw_material",
       minStockLevel: 10,
-      unit: "kg",
+      baseUnit: "kg", // FIX: was unit: "kg"
     };
     await request(app)
       .post("/api/inventory")
