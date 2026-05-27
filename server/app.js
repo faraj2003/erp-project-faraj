@@ -29,9 +29,13 @@ const createApp = () => {
 
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000,
-    standardHeaders: false,
+    max: 10,
+    standardHeaders: true,
     legacyHeaders: false,
+    message: {
+      success: false,
+      error: "Too many login attempts. Please try again after 15 minutes.",
+    },
   });
 
   app.use("/api/", apiLimiter);
