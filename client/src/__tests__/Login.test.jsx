@@ -36,8 +36,7 @@ describe('Login page', () => {
   it('renders the login form with email, password fields and submit button', () => {
     renderWithProviders(<Login />);
 
-    expect(screen.getByPlaceholderText(/admin@factoryflow.com/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/••••••••/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/operator@company.com/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
@@ -50,14 +49,12 @@ describe('Login page', () => {
     const user = userEvent.setup();
     renderWithProviders(<Login />);
 
-    await user.type(screen.getByPlaceholderText(/admin@factoryflow.com/i), 'admin@test.com');
-    await user.type(screen.getByPlaceholderText(/••••••••/i), 'password123');
+    await user.type(screen.getByPlaceholderText(/operator@company.com/i), 'admin@test.com');
+    await user.type(screen.getByPlaceholderText(/password/i), 'password123');
 
-    // Click and immediately check loading state before MSW responds
     const submitBtn = screen.getByRole('button', { name: /sign in/i });
     await user.click(submitBtn);
 
-    // Button should show loading text during the async call
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /signing in/i })).toBeDefined();
     });
@@ -67,12 +64,11 @@ describe('Login page', () => {
     const user = userEvent.setup();
     renderWithProviders(<Login />);
 
-    await user.type(screen.getByPlaceholderText(/admin@factoryflow.com/i), 'admin@test.com');
-    await user.type(screen.getByPlaceholderText(/••••••••/i), 'password123');
+    await user.type(screen.getByPlaceholderText(/operator@company.com/i), 'admin@test.com');
+    await user.type(screen.getByPlaceholderText(/password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
-      // Zustand store should be populated
       const { isAuthenticated, token, user: storedUser } = useAuthStore.getState();
       expect(isAuthenticated).toBe(true);
       expect(token).toBe('fake.jwt.token.for.testing');
@@ -87,15 +83,14 @@ describe('Login page', () => {
     const user = userEvent.setup();
     renderWithProviders(<Login />);
 
-    await user.type(screen.getByPlaceholderText(/admin@factoryflow.com/i), 'wrong@test.com');
-    await user.type(screen.getByPlaceholderText(/••••••••/i), 'wrongpassword');
+    await user.type(screen.getByPlaceholderText(/operator@company.com/i), 'wrong@test.com');
+    await user.type(screen.getByPlaceholderText(/password/i), 'wrongpassword');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/invalid email or password/i)).toBeInTheDocument();
     });
 
-    // Store should NOT be updated
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(mockNavigate).not.toHaveBeenCalledWith('/dashboard');
   });
@@ -104,20 +99,18 @@ describe('Login page', () => {
     const user = userEvent.setup();
     renderWithProviders(<Login />);
 
-    // Trigger an error first
-    await user.type(screen.getByPlaceholderText(/admin@factoryflow.com/i), 'bad@test.com');
-    await user.type(screen.getByPlaceholderText(/••••••••/i), 'badpass');
+    await user.type(screen.getByPlaceholderText(/operator@company.com/i), 'bad@test.com');
+    await user.type(screen.getByPlaceholderText(/password/i), 'badpass');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/invalid email or password/i)).toBeInTheDocument();
     });
 
-    // Type new valid credentials — submit again to clear error
-    await user.clear(screen.getByPlaceholderText(/admin@factoryflow.com/i));
-    await user.type(screen.getByPlaceholderText(/admin@factoryflow.com/i), 'admin@test.com');
-    await user.clear(screen.getByPlaceholderText(/••••••••/i));
-    await user.type(screen.getByPlaceholderText(/••••••••/i), 'password123');
+    await user.clear(screen.getByPlaceholderText(/operator@company.com/i));
+    await user.type(screen.getByPlaceholderText(/operator@company.com/i), 'admin@test.com');
+    await user.clear(screen.getByPlaceholderText(/password/i));
+    await user.type(screen.getByPlaceholderText(/password/i), 'password123');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
@@ -126,7 +119,6 @@ describe('Login page', () => {
   });
 
   it('redirects already-authenticated users away from login', () => {
-    // Set auth state before rendering
     act(() => {
       useAuthStore.setState({
         user: { _id: '1', name: 'Admin', email: 'a@test.com', role: 'admin' },
@@ -137,7 +129,6 @@ describe('Login page', () => {
 
     renderWithProviders(<Login />, { initialEntries: ['/login'] });
 
-    // Login form should not be visible — user is redirected
     expect(screen.queryByRole('button', { name: /sign in/i })).not.toBeInTheDocument();
   });
 
