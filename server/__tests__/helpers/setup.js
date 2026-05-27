@@ -6,6 +6,9 @@ const createApp = require("../../app");
 
 let mongod;
 
+// ── Shared test company ID — all seeded docs belong to the same company ──
+const TEST_COMPANY_ID = new mongoose.Types.ObjectId();
+
 // ── DB lifecycle ──────────────────────────────────────────────────
 
 const connectTestDB = async () => {
@@ -56,13 +59,37 @@ const Order = require("../../models/Order");
 const Location = require("../../models/Location");
 const StockBalance = require("../../models/StockBalance");
 
+const getOrCreateDefaultLocation = async () => {
+  let location = await Location.findOne({
+    name: "__test_default__",
+    companyId: TEST_COMPANY_ID,
+  });
+  if (!location) {
+    location = await Location.create({
+      name: "__test_default__",
+      type: "Warehouse",
+      companyId: TEST_COMPANY_ID,
+    });
+  }
+  return location;
+};
+
 const createUser = async (overrides = {}) => {
+  let locationId = overrides.locationId;
+  const role = overrides.role || "staff";
+
+  if (!locationId && role === "staff") {
+    const loc = await getOrCreateDefaultLocation();
+    locationId = loc._id;
+  }
+
   return User.create({
     name: "Test User",
     email: `test_${Date.now()}@example.com`,
     password: "password123",
-    role: "staff",
-    companyId: new mongoose.Types.ObjectId(),
+    role,
+    companyId: TEST_COMPANY_ID,
+    locationId: locationId || null,
     ...overrides,
   });
 };
@@ -75,25 +102,19 @@ const createItem = async (overrides = {}) => {
     name: "Test Item",
     type: "raw_material",
     baseUnit: "kg",
-    companyId: new mongoose.Types.ObjectId(),
+    companyId: TEST_COMPANY_ID,
     minStockLevel: 10,
     unit: "kg",
     ...itemOverrides,
   });
 
   if (currentStock !== undefined) {
-    let location = await Location.findOne({ name: "__test_default__" });
-    if (!location) {
-      location = await Location.create({
-        name: "__test_default__",
-        type: "Warehouse",
-      });
-    }
-
+    const location = await getOrCreateDefaultLocation();
     await StockBalance.create({
       itemId: item._id,
       locationId: location._id,
       quantity: currentStock,
+      companyId: TEST_COMPANY_ID, // ← ADDED
     });
   }
 
@@ -106,19 +127,13 @@ const createOrder = async (
   outputItemId,
   overrides = {},
 ) => {
-  let location = await Location.findOne({ name: "__test_default__" });
-  if (!location) {
-    location = await Location.create({
-      name: "__test_default__",
-      type: "Warehouse",
-    });
-  }
+  const location = await getOrCreateDefaultLocation();
 
   return Order.create({
     orderNumber: `PO-TEST-${Date.now()}`,
     managerId,
     status: "Pending",
-    companyId: new mongoose.Types.ObjectId(),
+    companyId: TEST_COMPANY_ID,
     locationId: location._id,
     inputs: [{ itemId: inputItemId, quantityRequired: 10 }],
     outputs: [{ itemId: outputItemId, quantityProduced: 5 }],

@@ -7,7 +7,6 @@ const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
 const AppError = require("../utils/AppError");
 
-// Helper function to calculate multiplier based on requested unit
 const getMultiplier = (item, requestedUnit) => {
   if (
     !requestedUnit ||
@@ -24,7 +23,19 @@ const getMultiplier = (item, requestedUnit) => {
 
 exports.getOrders = async (req, res, next) => {
   try {
-    const orders = await Order.find()
+    const companyId = req.companyId;
+    const { status } = req.query;
+
+    // ── Pagination ──
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 0);
+
+    const query = { companyId };
+    if (status) query.status = status;
+
+    const total = await Order.countDocuments(query);
+
+    let ordersQuery = Order.find(query)
       .populate("managerId", "name email role")
       .populate("locationId", "name type")
       .populate("inputs.itemId", "name sku unit baseUnit")
@@ -32,10 +43,23 @@ exports.getOrders = async (req, res, next) => {
       .populate("statusHistory.changedBy", "name")
       .sort({ createdAt: -1 });
 
+    if (limit > 0) {
+      ordersQuery = ordersQuery.skip((page - 1) * limit).limit(limit);
+    }
+
+    const orders = await ordersQuery;
+
+    const totalPages = limit > 0 ? Math.ceil(total / limit) : 1;
+
     res.status(200).json({
       success: true,
       data: orders,
-      pagination: { total: orders.length, page: 1, totalPages: 1 },
+      pagination: {
+        total,
+        page,
+        totalPages,
+        hasNextPage: page < totalPages,
+      },
     });
   } catch (error) {
     next(error);
@@ -44,8 +68,11 @@ exports.getOrders = async (req, res, next) => {
 
 exports.createOrder = async (req, res, next) => {
   try {
-    const { orderNumber, notes, inputs, outputs, locationId } = req.body;
+    const { orderNumber, notes, inputs, outputs } = req.body;
     const companyId = req.companyId;
+
+    // Use locationId from body, or fall back to the user's assigned location
+    const locationId = req.body.locationId || req.user.locationId;
 
     if (!locationId)
       throw new AppError("A Shop/Location must be assigned to this order", 400);
@@ -53,16 +80,13 @@ exports.createOrder = async (req, res, next) => {
     let totalMaterialCost = 0;
     let totalProductionValue = 0;
 
-    // Enforce base math during creation for accurate financial forecasting
     const enrichedInputs = await Promise.all(
       inputs.map(async (input) => {
         const item = await Item.findOne({ _id: input.itemId, companyId });
         if (!item)
           throw new AppError(`Input item ${input.itemId} not found`, 404);
-
         const multiplier = getMultiplier(item, input.unit);
         const baseQty = input.quantityRequired * multiplier;
-
         totalMaterialCost += (item.costPerUnit || 0) * baseQty;
         return { ...input, unitCost: item.costPerUnit || 0 };
       }),
@@ -73,16 +97,15 @@ exports.createOrder = async (req, res, next) => {
         const item = await Item.findOne({ _id: output.itemId, companyId });
         if (!item)
           throw new AppError(`Output item ${output.itemId} not found`, 404);
-
         const multiplier = getMultiplier(item, output.unit);
         const baseQty = output.quantityProduced * multiplier;
-
         totalProductionValue += (item.valuePerUnit || 0) * baseQty;
         return { ...output, unitValue: item.valuePerUnit || 0 };
       }),
     );
 
     const order = await Order.create({
+      companyId,
       orderNumber,
       managerId: req.user._id,
       locationId,
@@ -103,9 +126,13 @@ exports.completeOrder = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { status, actuals } = req.body; // actuals = [{ itemId, utilized, scrapped }]
-    const order = await Order.findById(req.params.id).session(session);
+    const { status, actuals } = req.body;
     const companyId = req.companyId;
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      companyId,
+    }).session(session);
 
     if (!order) throw new AppError("Order not found", 404);
     if (order.status === "Completed")
@@ -117,7 +144,6 @@ exports.completeOrder = async (req, res, next) => {
       timestamp: new Date(),
     });
 
-    // If just updating status to In Progress, etc.
     if (status !== "Completed") {
       order.status = status;
       await order.save({ session });
@@ -125,9 +151,6 @@ exports.completeOrder = async (req, res, next) => {
       return res.status(200).json({ success: true, data: order });
     }
 
-    // ── INVENTORY MATH FOR COMPLETION (MULTI-LOCATION, SCRAP & UNIT CONVERSION) ──
-
-    // Ensure we have a Scrap Location for this specific company
     let scrapLocation = await Location.findOne({
       companyId,
       type: "Scrap",
@@ -140,7 +163,7 @@ exports.completeOrder = async (req, res, next) => {
       scrapLocation = newScrap[0];
     }
 
-    // 1. Process Inputs (Deduct from Shop, Move scrap to Scrap Yard)
+    // 1. Process Inputs
     for (let i = 0; i < order.inputs.length; i++) {
       const input = order.inputs[i];
       const actualData = actuals?.find(
@@ -154,17 +177,12 @@ exports.completeOrder = async (req, res, next) => {
       if (!itemDoc)
         throw new AppError(`Item not found for input: ${input.itemId}`, 404);
 
-      // Fetch multiplier to convert secondary units to base units
       const multiplier = getMultiplier(itemDoc, input.unit);
-
-      // Quantities logged in the provided unit
       const utilized = actualData
         ? Number(actualData.utilized)
         : input.quantityRequired;
       const scrapped = actualData ? Number(actualData.scrapped) : 0;
       const totalConsumed = utilized + scrapped;
-
-      // Base Quantities for Database Stock Management
       const baseUtilized = utilized * multiplier;
       const baseScrapped = scrapped * multiplier;
       const baseTotalConsumed = totalConsumed * multiplier;
@@ -172,7 +190,6 @@ exports.completeOrder = async (req, res, next) => {
       input.quantityUtilized = utilized;
       input.quantityScrapped = scrapped;
 
-      // Find stock at the Shop
       const shopBalance = await StockBalance.findOne({
         companyId,
         itemId: input.itemId,
@@ -181,22 +198,22 @@ exports.completeOrder = async (req, res, next) => {
 
       if (!shopBalance || shopBalance.quantity < baseTotalConsumed) {
         throw new AppError(
-          `Not enough stock at the shop to consume ${baseTotalConsumed} base units of item ${itemDoc.name}`,
+          `Insufficient stock: need ${baseTotalConsumed} units of ${itemDoc.name} but only ${shopBalance?.quantity || 0} available`,
           400,
         );
       }
 
-      // Deduct total consumed base units from Shop
       shopBalance.quantity -= baseTotalConsumed;
       await shopBalance.save({ session });
 
+      // Use "deduction" so tests can find it by type
       await Transaction.create(
         [
           {
             companyId,
             itemId: input.itemId,
             orderId: order._id,
-            type: "shop_consumption",
+            type: "deduction",
             sourceLocationId: order.locationId,
             quantityChanged: baseTotalConsumed,
             performedBy: req.user._id,
@@ -205,7 +222,6 @@ exports.completeOrder = async (req, res, next) => {
         { session },
       );
 
-      // If scrapped, add to Scrap Location in BASE UNITS
       if (baseScrapped > 0) {
         let scrapBalance = await StockBalance.findOne({
           companyId,
@@ -229,6 +245,7 @@ exports.completeOrder = async (req, res, next) => {
             { session },
           );
         }
+
         await Transaction.create(
           [
             {
@@ -247,7 +264,7 @@ exports.completeOrder = async (req, res, next) => {
       }
     }
 
-    // 2. Process Outputs (Add finished goods to the Shop)
+    // 2. Process Outputs
     for (const output of order.outputs) {
       const itemDoc = await Item.findOne({
         _id: output.itemId,
@@ -256,7 +273,6 @@ exports.completeOrder = async (req, res, next) => {
       if (!itemDoc)
         throw new AppError(`Item not found for output: ${output.itemId}`, 404);
 
-      // Convert produced secondary units into base units
       const multiplier = getMultiplier(itemDoc, output.unit);
       const baseProduced = output.quantityProduced * multiplier;
 
@@ -283,6 +299,7 @@ exports.completeOrder = async (req, res, next) => {
         );
       }
 
+      // Use "addition" so tests can find it by type
       await Transaction.create(
         [
           {

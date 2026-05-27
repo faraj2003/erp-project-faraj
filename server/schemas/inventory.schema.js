@@ -1,5 +1,4 @@
 // server/schemas/inventory.schema.js
-
 const { z } = require("zod");
 
 const createItemSchema = z
@@ -13,20 +12,18 @@ const createItemSchema = z
 
     productCompanyName: z.string().optional(),
 
-    // Fixed missing field name
     type: z.string().min(1, "Type is required"),
+
+    baseUnit: z.string().min(1, "Base unit is required"), // ← ADDED
 
     categoryId: z.string().optional().nullable(),
 
     currentStock: z.number().min(0, "Stock cannot be negative").optional(),
 
-    // Stock Alert Thresholds
     alertLevels: z
       .object({
         orange: z.number().min(0).optional(),
-
         red: z.number().min(0).optional(),
-
         critical: z.number().min(0).optional(),
       })
       .optional(),
@@ -40,14 +37,15 @@ const createItemSchema = z
     supplier: z
       .object({
         name: z.string().optional(),
-
         contactInfo: z.string().optional(),
       })
       .optional(),
 
-    unit: z.string().min(1, "Unit is required (e.g. kg, units, liters)"),
+    unit: z
+      .string()
+      .min(1, "Unit is required (e.g. kg, units, liters)")
+      .optional(), // ← made optional, baseUnit is the real field
 
-    // Secondary Unit fields
     secondaryUnit: z.string().optional(),
 
     conversionFactor: z
@@ -57,21 +55,11 @@ const createItemSchema = z
   })
   .refine(
     (data) => {
-      // Ensure both secondaryUnit and conversionFactor are provided together
-
       const hasSecondaryUnit = !!data.secondaryUnit;
-
       const hasConversionFactor =
         data.conversionFactor !== undefined && data.conversionFactor !== null;
-
-      if (hasSecondaryUnit && !hasConversionFactor) {
-        return false;
-      }
-
-      if (!hasSecondaryUnit && hasConversionFactor) {
-        return false;
-      }
-
+      if (hasSecondaryUnit && !hasConversionFactor) return false;
+      if (!hasSecondaryUnit && hasConversionFactor) return false;
       return true;
     },
     {
@@ -81,6 +69,4 @@ const createItemSchema = z
     },
   );
 
-module.exports = {
-  createItemSchema,
-};
+module.exports = { createItemSchema };
