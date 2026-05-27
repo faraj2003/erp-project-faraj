@@ -15,7 +15,26 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-const locationHandlers = [
+// Inventory with balances so locationRawMaterials populates after selecting loc_1
+const inventoryWithBalances = http.get('*/api/inventory', () =>
+  HttpResponse.json({
+    success: true,
+    count: 2,
+    data: [
+      {
+        _id: 'item_1', sku: 'RAW-STL-01', name: 'Steel Rods', type: 'raw_material',
+        baseUnit: 'kg',
+        balances: [{ locationId: { _id: 'loc_1' }, quantity: 100 }],
+      },
+      {
+        _id: 'item_2', sku: 'FIN-GEAR-01', name: 'Gear Assembly', type: 'finished_good',
+        baseUnit: 'units', balances: [],
+      },
+    ],
+  })
+);
+
+const baseHandlers = [
   http.get('*/api/locations', () =>
     HttpResponse.json([{ _id: 'loc_1', name: 'Main Shop', type: 'shop' }])
   ),
@@ -31,7 +50,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'warn' }));
 
 beforeEach(() => {
   mockNavigate.mockClear();
-  server.use(...locationHandlers);
+  server.use(...baseHandlers);
   act(() => {
     useAuthStore.setState({
       user: { _id: 'mgr_1', name: 'Manager', email: 'mgr@test.com', role: 'manager' },
@@ -61,8 +80,7 @@ describe('NewOrder — form structure', () => {
 
   it('starts with one input row and one output row by default', () => {
     renderWithProviders(<NewOrder />);
-    const qtyInputs = screen.getAllByPlaceholderText(/qty/i);
-    expect(qtyInputs.length).toBe(2);
+    expect(screen.getAllByPlaceholderText(/qty/i).length).toBe(2);
   });
 
 });
@@ -76,7 +94,6 @@ describe('NewOrder — useFieldArray add/remove', () => {
     renderWithProviders(<NewOrder />);
 
     await user.click(screen.getByRole('button', { name: /add output/i }));
-
     expect(screen.getAllByPlaceholderText(/qty/i).length).toBe(3);
   });
 
@@ -88,7 +105,6 @@ describe('NewOrder — useFieldArray add/remove', () => {
     await user.click(addBtn);
     await user.click(addBtn);
 
-    // 1 input + 3 output = 4
     expect(screen.getAllByPlaceholderText(/qty/i).length).toBe(4);
 
     const removeButtons = screen.getAllByText('✕');
@@ -103,7 +119,6 @@ describe('NewOrder — useFieldArray add/remove', () => {
 
     expect(screen.getByRole('button', { name: /add material/i })).toBeDisabled();
 
-    // Target location select specifically by name attribute
     const locationSelect = document.querySelector('select[name="locationId"]');
     await waitFor(() => expect(locationSelect.options.length).toBeGreaterThan(1));
     await user.selectOptions(locationSelect, 'loc_1');
@@ -155,65 +170,37 @@ describe('NewOrder — Zod validation', () => {
 });
 
 // ── Successful submission ────────────────────────────────────────────
+// These tests need inventory with balances — registered in beforeEach
 
 describe('NewOrder — successful submission', () => {
+
+  beforeEach(() => {
+    // Override inventory with balance data BEFORE component mounts
+    server.use(inventoryWithBalances);
+  });
 
   it('navigates to /orders after successful submission', async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewOrder />);
 
-    // Fill order number
     await user.type(screen.getByPlaceholderText(/PO-2026-001/i), 'PO-TEST-001');
 
-    // Select location by name
+    // Select location
     const locationSelect = document.querySelector('select[name="locationId"]');
     await waitFor(() => expect(locationSelect.options.length).toBeGreaterThan(1));
     await user.selectOptions(locationSelect, 'loc_1');
+
+    // Input dropdown should now have Steel Rods since balances include loc_1
+    const inputSelect = document.querySelector('select[name="inputs.0.itemId"]');
+    await waitFor(() => expect(inputSelect.options.length).toBeGreaterThan(1));
+    await user.selectOptions(inputSelect, 'item_1');
+    await user.type(document.querySelector('input[name="inputs.0.quantityRequired"]'), '10');
 
     // Select finished good in output row
     const outputSelect = document.querySelector('select[name="outputs.0.itemId"]');
     await waitFor(() => expect(outputSelect.options.length).toBeGreaterThan(1));
     await user.selectOptions(outputSelect, 'item_2');
-
-    // Fill output qty
     await user.type(document.querySelector('input[name="outputs.0.quantityProduced"]'), '5');
-
-    // Fill input item — mock inventory has no balances for loc_1 so inputs.0.itemId stays empty
-    // Zod requires inputs array to have itemId — inject directly via the hidden input
-    // Instead: add a valid input row value by selecting from the input dropdown
-    // Since locationRawMaterials will be empty (mock items have no balances), 
-    // we skip input validation by removing the input row and relying on Zod min(1) not firing
-    // Actually Zod min(1) WILL fire — so we must fill inputs too.
-    // Workaround: update MSW inventory mock to include balances for loc_1
-    server.use(
-      http.get('*/api/inventory', () =>
-        HttpResponse.json({
-          success: true,
-          count: 2,
-          data: [
-            {
-              _id: 'item_1', sku: 'RAW-STL-01', name: 'Steel Rods', type: 'raw_material',
-              baseUnit: 'kg',
-              balances: [{ locationId: { _id: 'loc_1' }, quantity: 100 }],
-            },
-            {
-              _id: 'item_2', sku: 'FIN-GEAR-01', name: 'Gear Assembly', type: 'finished_good',
-              baseUnit: 'units',
-              balances: [],
-            },
-          ],
-        })
-      )
-    );
-
-    // Re-select location to trigger re-filter of locationRawMaterials
-    await user.selectOptions(locationSelect, '');
-    await user.selectOptions(locationSelect, 'loc_1');
-
-    const inputSelect = document.querySelector('select[name="inputs.0.itemId"]');
-    await waitFor(() => expect(inputSelect.options.length).toBeGreaterThan(1));
-    await user.selectOptions(inputSelect, 'item_1');
-    await user.type(document.querySelector('input[name="inputs.0.quantityRequired"]'), '10');
 
     await user.click(screen.getByRole('button', { name: /create production order/i }));
 
@@ -229,23 +216,6 @@ describe('NewOrder — successful submission', () => {
           { success: false, message: 'Duplicate order number' },
           { status: 400 }
         )
-      ),
-      http.get('*/api/inventory', () =>
-        HttpResponse.json({
-          success: true,
-          count: 1,
-          data: [
-            {
-              _id: 'item_1', sku: 'RAW-STL-01', name: 'Steel Rods', type: 'raw_material',
-              baseUnit: 'kg',
-              balances: [{ locationId: { _id: 'loc_1' }, quantity: 100 }],
-            },
-            {
-              _id: 'item_2', sku: 'FIN-GEAR-01', name: 'Gear Assembly', type: 'finished_good',
-              baseUnit: 'units', balances: [],
-            },
-          ],
-        })
       )
     );
 
