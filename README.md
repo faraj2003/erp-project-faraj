@@ -18,6 +18,15 @@ Built with a modern JavaScript stack featuring:
 
 ---
 
+# 🌐 Live Demo
+
+## 🚀 Deployed Application
+
+- Frontend: https://erp-project-faraj.vercel.app
+- Backend API: https://erp-project-faraj.onrender.com
+
+---
+
 # ✨ Features
 
 ---
@@ -403,6 +412,51 @@ Runs on:
 
 ```txt
 http://localhost:5173
+```
+
+---
+
+# 🚀 Deployment
+
+## Frontend Deployment (Vercel)
+
+The frontend is deployed using **Vercel**.
+
+Production URL:
+
+```txt
+https://erp-project-faraj.vercel.app
+```
+
+### Frontend Environment Variable
+
+```env
+VITE_API_URL=https://erp-project-faraj.onrender.com
+```
+
+---
+
+## Backend Deployment (Render)
+
+The backend API is deployed using **Render**.
+
+Production API URL:
+
+```txt
+https://erp-project-faraj.onrender.com
+```
+
+### Backend Environment Variables
+
+```env
+NODE_ENV=production
+
+MONGO_URI=your_mongodb_connection_string
+
+JWT_SECRET=your_secret_key
+JWT_EXPIRES_IN=7d
+
+CLIENT_URL=https://erp-project-faraj.vercel.app
 ```
 
 ---
