@@ -1,318 +1,182 @@
-# FactoryFlow ERP 🏭
+FactoryFlow ERP 🏭
+A full-stack, production-grade Enterprise Resource Planning system built to manage inventory, manufacturing orders, procurement, users, and analytics for factory operations.
 
-FactoryFlow is a **full-stack, production-ready Enterprise Resource Planning (ERP) system** designed to manage **inventory, orders, users, and analytics**. It is built using a modern JavaScript stack and includes **real-time updates, secure authentication, structured logging, and automated testing**.
+Built with a modern JavaScript stack — real-time WebSockets, JWT auth, ACID-compliant transactions, role-based access control, and a fully automated CI test suite.
 
----
+🚀 Live Features
+📦 Inventory Management
 
-# ✨ Key Features
+Multi-location stock tracking across warehouses and shop floors
+FIFO-based stock issuance and transfers between locations
+Low-stock alerts with configurable minStockLevel thresholds
+Inventory adjustments with an approval workflow (draft → pending → approved/rejected)
+Full inventory ledger — every stock movement logged as an immutable transaction
+CSV export for items, transactions, and adjustments
+Barcode scanner support via html5-qrcode
 
-### Real-Time Inventory Management
+🏗️ Manufacturing Orders
 
-Live inventory updates across all connected clients using **Socket.io WebSockets**.
+Create production orders with multi-item inputs and outputs
+ACID-compliant order completion — stock deductions and audit log writes happen atomically inside a MongoDB session. If any input has insufficient stock, the entire transaction rolls back — no partial state
+Full status history tracking per order
 
-### Secure Authentication
+🛒 Procurement
 
-JWT-based authentication with **bcrypt password hashing** and **API rate-limiting** to prevent brute-force attacks.
+Supplier management with multi-supplier pricing and price history
+Request for Quotation (RFQ) workflow
+Purchase Orders with Goods Receipt confirmation
+Vendor Invoice management and Return Orders
 
-### Production-Grade Backend
+📊 Analytics & Reporting
 
-Includes centralized error handling, request validation using **Zod**, and structured logging with **Winston**.
+Real-time dashboard with total valuation, low-stock count, and recent transactions
+Recharts-powered data visualization
+Bill of Materials (BOM) with assembly tracking
+Cycle Count auditing
 
-### Modern Frontend Architecture
+👥 User & Access Management
 
-Frontend built using **React 19 + Vite**, with:
+Role-based access control (RBAC) across 7 roles: admin, manager, staff, shop_worker, shop_manager, procurement_manager, dispatch_manager
+Admin-only user provisioning and role promotion/demotion
+Location-scoped data visibility — staff only see stock for their assigned facility
 
-- Zustand for global state
-- TanStack React Query for server-state caching
-- React Hook Form for performant validation
+🔐 Security
 
-### Comprehensive Testing
+JWT authentication with bcrypt password hashing
+API rate limiting to prevent brute-force attacks
+Helmet for HTTP header hardening
+Request validation on every endpoint via Zod schemas
 
-High test coverage using:
+⚡ Real-Time
 
-- **Jest + Supertest** for backend API testing
-- **Vitest + React Testing Library** for frontend components
+Socket.io WebSocket integration for live inventory updates across all connected clients
 
----
+🧪 Testing
+The backend has a comprehensive automated test suite covering authentication, inventory, orders, and users — 52 tests across 4 test suites, all passing.
+Test Suites: 4 passed, 4 total
+Tests: 52 passed, 52 total
+Tests are written with Jest + Supertest against an isolated MongoDB in-memory replica set (no external DB needed). Key test coverage includes:
 
-# 🛠️ Tech Stack
+✅ JWT auth — login, registration, token expiry, invalid tokens
+✅ RBAC enforcement — role-based 401/403 responses on every protected route
+✅ Inventory CRUD — create, update, delete, filters, search, low-stock
+✅ ACID transaction rollback — verifies that insufficient-stock orders leave zero DB side effects (no stock changes, no audit log entries)
+✅ Multi-item rollback — if any input in a multi-item order fails, all previous deductions are also reversed
+✅ User management — create, get, role promotion, self-role change prevention
 
-## Frontend (`/client`)
+CI runs on every push and PR via GitHub Actions.
 
-### Core
+🛠️ Tech Stack
+Backend
+LayerTechnologyRuntimeNode.jsFrameworkExpress.js v5DatabaseMongoDB + MongooseAuthJWT + bcryptjsValidationZodReal-TimeSocket.ioLoggingWinston + MorganSecurityHelmet, CORS, express-rate-limitTestingJest, Supertest, mongodb-memory-server
+Frontend
+LayerTechnologyFrameworkReact 19 + ViteStateZustand + TanStack React QueryRoutingReact Router v7StylingTailwind CSS v4ChartsRechartsFormsReact Hook Form + ZodAPIAxios + Socket.io-clientNotificationsSonnerTestingVitest, React Testing Library, MSW
 
-- React 19
-- Vite
-
-### State Management
-
-- Zustand
-- TanStack Query (React Query)
-
-### Routing
-
-- React Router v7
-
-### Styling & UI
-
-- Tailwind CSS v4
-- Recharts (Data Visualization)
-
-### Forms & Validation
-
-- React Hook Form
-- Zod
-
-### Real-Time & API
-
-- Axios
-- Socket.io-client
-
-### Testing
-
-- Vitest
-- React Testing Library
-- MSW (Mock Service Worker)
-
----
-
-## Backend (`/server`)
-
-### Core
-
-- Node.js
-- Express.js
-
-### Database
-
-- MongoDB
-- Mongoose
-
-### Security
-
-- Helmet
-- CORS
-- Express Rate Limit
-
-### Validation & Authentication
-
-- Zod
-- JSON Web Tokens (JWT)
-- bcryptjs
-
-### Logging & Monitoring
-
-- Winston
-- Morgan
-
-### Real-Time
-
-- Socket.io
-
-### Testing
-
-- Jest
-- Supertest
-- MongoDB Memory Server
-
----
-
-# 🚀 Getting Started
-
-## Prerequisites
-
-Make sure the following are installed:
-
-- Node.js (v18 or higher)
-- MongoDB (Local installation or MongoDB Atlas)
-
-Download:
-
-- [https://nodejs.org/](https://nodejs.org/)
-- [https://www.mongodb.com/try/download/community](https://www.mongodb.com/try/download/community)
-
----
-
-# 1️⃣ Clone the Repository
-
-```bash
-git clone https://github.com/faraj2003/erp-project-faraj.git
-cd erp-project-faraj
-```
-
----
-
-# 2️⃣ Environment Setup
-
-You must configure **environment variables for both server and client**.
-
----
-
-## Server Setup (`/server`)
-
-Create a `.env` file inside the **server folder**.
-
-```
-NODE_ENV=development
-PORT=5000
-MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/factoryflow
-JWT_SECRET=your_super_secret_jwt_key_here
-JWT_EXPIRES_IN=7d
-CLIENT_URL=http://localhost:5173
-```
-
----
-
-## Client Setup (`/client`)
-
-Create a `.env` file inside the **client folder**.
-
-```
-VITE_API_URL=http://localhost:5000
-```
-
----
-
-# 3️⃣ Install Dependencies
-
-Open **two terminals**.
-
----
-
-### Terminal 1 (Backend)
-
-```bash
-cd server
-npm install
-```
-
----
-
-### Terminal 2 (Frontend)
-
-```bash
-cd client
-npm install
-```
-
----
-
-# 4️⃣ Run the Application (Development Mode)
-
----
-
-## Start Backend
-
-```bash
-cd server
-npm run dev
-```
-
-Backend will run on:
-
-```
-http://localhost:5000
-```
-
----
-
-## Start Frontend
-
-```bash
-cd client
-npm run dev
-```
-
-Frontend will run on:
-
-```
-http://localhost:5173
-```
-
----
-
-# 🧪 Testing
-
-Both frontend and backend include **automated testing suites**.
-
----
-
-## Backend Tests
-
-Uses **mongodb-memory-server** to run tests with an isolated in-memory database.
-
-```bash
-cd server
-
-npm test
-npm run test:watch
-npm run test:coverage
-```
-
----
-
-## Frontend Tests
-
-Uses **Vitest + MSW** to mock API responses.
-
-```bash
-cd client
-
-npm test
-npm run test:coverage
-```
-
----
-
-# 📁 Project Structure
-
-```
+📁 Project Structure
 erp-project-faraj/
 │
-├── client/                     # React frontend
-│   ├── src/
-│   │   ├── assets/             # Static files
-│   │   ├── components/         # Reusable UI components
-│   │   ├── hooks/              # Custom React hooks
-│   │   ├── lib/                # Axios instance & utilities
-│   │   ├── pages/              # Route pages (Dashboard, Inventory, etc.)
-│   │   ├── store/              # Zustand global stores
-│   │   └── __tests__/          # Vitest tests & MSW mocks
-│   │
-│   └── package.json
+├── client/ # React 19 + Vite frontend
+│ └── src/
+│ ├── components/ # Reusable UI (BarcodeScanner, ProtectedRoute, etc.)
+│ ├── hooks/ # useInventorySocket (WebSocket hook)
+│ ├── lib/ # Axios instance, procurement API
+│ ├── pages/ # Route pages
+│ │ ├── Dashboard.jsx
+│ │ ├── Inventory.jsx
+│ │ ├── Orders.jsx
+│ │ ├── Procurement.jsx
+│ │ ├── Users.jsx
+│ │ └── ...
+│ ├── store/ # Zustand stores (auth, socket)
+│ └── **tests**/ # Vitest + MSW tests
 │
-├── server/                     # Express backend API
-│   ├── config/                 # Database & environment configs
-│   ├── controllers/            # Business logic
-│   ├── middleware/             # Custom middleware
-│   ├── models/                 # Mongoose schemas
-│   ├── routes/                 # Express routes
-│   ├── schemas/                # Zod validation schemas
-│   ├── utils/                  # Logger, AppError, helpers
-│   ├── __tests__/              # Jest + Supertest tests
-│   │
-│   └── package.json
-│
-└── README.md
-```
+└── server/ # Express.js backend API
+├── controllers/ # Business logic
+│ ├── inventoryController.js
+│ ├── orderController.js
+│ ├── authController.js
+│ ├── userController.js
+│ ├── purchaseOrderController.js
+│ ├── supplierController.js
+│ └── ...
+├── models/ # Mongoose schemas
+│ ├── Item.js
+│ ├── Order.js
+│ ├── StockBalance.js
+│ ├── Transaction.js
+│ ├── PurchaseOrder.js
+│ └── ...
+├── middleware/ # auth, validation, error handler, upload
+├── routes/ # Express routers
+├── schemas/ # Zod validation schemas
+├── utils/ # AppError, Winston logger
+└── **tests**/ # Jest + Supertest test suites
+├── auth.test.js
+├── inventory.test.js
+├── orders.test.js
+└── users.test.js
 
----
+⚙️ Getting Started
+Prerequisites
 
-# 📈 Future Improvements
+Node.js v18+
+MongoDB (local) or a MongoDB Atlas cluster
 
-Possible improvements for the system:
+1. Clone the repository
+   bashgit clone https://github.com/faraj2003/erp-project-faraj.git
+   cd erp-project-faraj
+2. Configure environment variables
+   Server — create server/.env:
+   envNODE_ENV=development
+   PORT=5000
+   MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/factoryflow
+   JWT_SECRET=your_super_secret_jwt_key_here
+   JWT_EXPIRES_IN=7d
+   CLIENT_URL=http://localhost:5173
+   Client — create client/.env:
+   envVITE_API_URL=http://localhost:5000
+3. Install dependencies
+   bash# Terminal 1 — Backend
+   cd server && npm install
 
-- Role-based admin dashboard
-- Advanced analytics
-- Production deployment with Docker
-- CI/CD pipeline (GitHub Actions)
-- Email notifications
-- Audit logs
+# Terminal 2 — Frontend
 
----
+cd client && npm install 4. Run in development mode
+bash# Backend (http://localhost:5000)
+cd server && npm run dev
 
-# 📜 License
+# Frontend (http://localhost:5173)
 
-This project is open source and available under the **MIT License**.
+cd client && npm run dev
 
----
+🧪 Running Tests
+bash# Backend — runs all 52 tests against an in-memory MongoDB replica set
+cd server
+npm test
+
+# With watch mode
+
+npm run test:watch
+
+# With coverage report
+
+npm run test:coverage
+bash# Frontend — Vitest + MSW
+cd client
+npm test
+
+🔑 API Overview
+MethodEndpointAccessDescriptionPOST/api/auth/loginPublicLogin and receive JWTPOST/api/auth/registerAdminRegister a new userGET/api/inventoryAll rolesList items (supports ?type= and ?search=)POST/api/inventoryAdmin, ManagerCreate inventory itemGET/api/inventory/low-stockAll rolesItems below minStockLevelGET/api/inventory/transactionsAdmin, ManagerFull transaction ledgerPOST/api/ordersStaff, Manager, AdminCreate production orderPATCH/api/orders/:id/statusManager, AdminComplete order (ACID transaction)GET/api/usersAdmin onlyList all usersPATCH/api/users/:id/roleAdmin onlyPromote or demote a userGET/api/ordersAll rolesList orders with pagination
+
+🏗️ Architecture Highlights
+ACID Order Completion
+When a production order is marked Completed, the entire operation — deducting all input stocks, adding all output stocks, and writing audit log entries — runs inside a single MongoDB session with startTransaction(). If any input item has insufficient stock, abortTransaction() is called and the database is left completely unchanged.
+Multi-Location Stock Model
+Stock is not stored on the Item document. Instead, a separate StockBalance collection stores quantity per (item, location) pair. This allows the same item to exist across multiple warehouses and shop floors with independent quantities.
+Location-Scoped Visibility
+Global roles (admin, manager, procurement_manager) see all stock across all locations. Location-bound roles (staff, shop_worker) only see data for their assigned facility, enforced at the query level.
+Zod + Centralized Error Handling
+Every route runs through a Zod validation middleware before reaching the controller. All errors — Mongoose validation errors, duplicate key errors, JWT errors, Zod errors, and CastErrors — are caught by a single errorHandler middleware and returned in a consistent { success, error, details } shape.
+
+📜 License
+MIT

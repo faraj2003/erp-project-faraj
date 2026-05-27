@@ -10,8 +10,8 @@ export default function Users() {
     name: '', email: '', password: '', role: 'staff', locationId: '', 
   });
 
-  const { data: users, isLoading: usersLoading } = useQuery({ queryKey: ['users'], queryFn: async () => (await axios.get('/api/users')).data });
-  const { data: locations, isLoading: locationsLoading } = useQuery({ queryKey: ['locations'], queryFn: async () => (await axios.get('/api/locations')).data });
+  const { data: users, isLoading: usersLoading } = useQuery({ queryKey: ['users'], queryFn: async () => (await axios.get('/api/users')).data.data });
+  const { data: locations, isLoading: locationsLoading } = useQuery({ queryKey: ['locations'], queryFn: async () => (await axios.get('/api/locations')).data.data });
 
   const createUser = useMutation({
     mutationFn: async (newUser) => (await axios.post('/api/users', newUser)).data,
