@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { fetchPOs, approvePO, submitGRN, fetchProcurementStats, sendCustomAlert, fetchRejectedGRNs, fetchReturns, createReturn, fetchAllGRNs, fetchInvoices, submitInvoice, fetchSuppliers, fetchProcurementItems, fetchRFQs, createRFQ, submitSupplierBid, awardBid } from '../lib/procurementApi';
+import { fetchPOs, approvePO, submitGRN, fetchProcurementStats, sendCustomAlert, fetchRejectedGRNs, fetchReturns, createReturn, fetchAllGRNs, fetchInvoices, submitInvoice, fetchSuppliers, createSupplier, fetchProcurementItems, fetchRFQs, createRFQ, submitSupplierBid, awardBid } from '../lib/procurementApi';
 import axios from '../lib/axios'; 
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'sonner';
 import { 
   LayoutDashboard, CheckSquare, Truck, RotateCcw, Receipt, Gavel, 
-  Zap, Bell, ShieldCheck, AlertTriangle, ArrowRight, DollarSign 
+  Zap, Bell, ShieldCheck, AlertTriangle, ArrowRight, DollarSign, Users
 } from 'lucide-react';
 
 const Procurement = () => {
@@ -27,22 +27,44 @@ const Procurement = () => {
   const [alertForm, setAlertForm] = useState({ message: '', targetAudience: 'everyone' });
   const [invoiceForm, setInvoiceForm] = useState({ invoiceNumber: '', goodsReceiptId: '' });
   const [rfqForm, setRfqForm] = useState({ itemId: '', targetQuantity: '', deadline: '' });
+  
+  // Added for Vendor Directory
+  const [supplierForm, setSupplierForm] = useState({ name: '', contactPerson: '', email: '', phone: '', suppliedItems: [] });
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
       setLoading(true);
+      
+      // We wrap the Promise.all in a try-catch, but let's log which one specifically fails
       const [poData, statsData, rejectionsData, rtvData, grnData, invData, supData, itemData, rfqData] = await Promise.all([ 
-        fetchPOs(), fetchProcurementStats(), fetchRejectedGRNs(), fetchReturns(), fetchAllGRNs(), fetchInvoices(), fetchSuppliers(), fetchProcurementItems(), fetchRFQs()
+        fetchPOs().catch(e => { console.error("PO Error:", e); return { data: [] }; }), 
+        fetchProcurementStats().catch(e => { console.error("Stats Error:", e); return { data: { pendingPOsCount: 0, lowStockItems: [] } }; }), 
+        fetchRejectedGRNs().catch(e => { console.error("Rejected GRN Error:", e); return { data: [] }; }), 
+        fetchReturns().catch(e => { console.error("Returns Error:", e); return { data: [] }; }), 
+        fetchAllGRNs().catch(e => { console.error("All GRNs Error:", e); return { data: [] }; }), 
+        fetchInvoices().catch(e => { console.error("Invoices Error:", e); return { data: [] }; }), 
+        fetchSuppliers().catch(e => { console.error("Suppliers Error:", e); return { data: [] }; }), 
+        fetchProcurementItems().catch(e => { console.error("Items Error:", e); return { data: [] }; }), 
+        fetchRFQs().catch(e => { console.error("RFQs Error:", e); return { data: [] }; })
       ]);
-      setPOs(poData.data); setStats(statsData.data);
-      setRejectedGRNs(rejectionsData.data); setReturns(rtvData.data);
-      setAllGRNs(grnData.data); setInvoices(invData.data);
-      setSuppliers(supData.data); setItems(itemData.data); setRfqs(rfqData.data);
+
+      setPOs(poData.data); 
+      setStats(statsData.data);
+      setRejectedGRNs(rejectionsData.data); 
+      setReturns(rtvData.data);
+      setAllGRNs(grnData.data); 
+      setInvoices(invData.data);
+      setSuppliers(supData.data); 
+      setItems(itemData.data); 
+      setRfqs(rfqData.data);
+      
     } catch (err) { 
-      toast.error('Data Sync Failed', { description: 'Could not load procurement data.' });
-    } finally { setLoading(false); }
+      toast.error('Data Sync Failed', { description: 'Check console for exact route error.' });
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const handleApprove = async (poId) => { 
@@ -142,6 +164,17 @@ const Procurement = () => {
     } catch (err) { toast.error('Failed to award bid'); }
   };
 
+  // Added for Vendor Directory
+  const handleCreateSupplier = async (e) => {
+    e.preventDefault();
+    try {
+      await createSupplier(supplierForm);
+      toast.success('Vendor Onboarded', { description: `${supplierForm.name} and their items are now active.` });
+      setSupplierForm({ name: '', contactPerson: '', email: '', phone: '', suppliedItems: [] });
+      loadData();
+    } catch (err) { toast.error('Failed to add vendor', { description: err.response?.data?.message || err.message }); }
+  };
+
   if (loading) return <div className="p-10 text-center font-medium text-gray-400 animate-pulse">Loading Procurement Data...</div>;
 
   const pendingPOs = pos.filter(po => po.status === 'Pending Approval');
@@ -149,6 +182,7 @@ const Procurement = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
+    { id: 'suppliers', label: 'Vendor Directory', icon: <Users size={16} /> },
     { id: 'approvals', label: `Approvals (${pendingPOs.length})`, icon: <CheckSquare size={16} /> },
     { id: 'receive', label: 'Receive Goods', icon: <Truck size={16} /> },
     { id: 'returns', label: 'Returns', icon: <RotateCcw size={16} /> },
@@ -230,6 +264,90 @@ const Procurement = () => {
              </div>
            </div>
          </div>
+      )}
+
+      {/* ── VENDOR DIRECTORY TAB ── */}
+      {activeTab === 'suppliers' && (
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Add Vendor Form */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-gray-200/60 p-6 lg:col-span-1 border-t-4 border-t-purple-500 h-fit">
+            <h2 className="text-lg font-black text-gray-900 tracking-tight mb-6 flex items-center gap-2"><Users className="text-purple-500"/> Onboard Vendor</h2>
+            <form onSubmit={handleCreateSupplier} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Company Name</label>
+                <input type="text" required className="input" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} placeholder="e.g. Acme Corp" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Contact Person</label>
+                  <input type="text" required className="input" value={supplierForm.contactPerson} onChange={e => setSupplierForm({...supplierForm, contactPerson: e.target.value})} placeholder="John Doe" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Phone</label>
+                  <input type="tel" required className="input" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} placeholder="555-0192" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Email</label>
+                <input type="email" required className="input" value={supplierForm.email} onChange={e => setSupplierForm({...supplierForm, email: e.target.value})} placeholder="sales@acme.com" />
+              </div>
+
+              {/* NEW: Multi-Select Inventory Linker */}
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Assign Inventory Items</label>
+                <div className="max-h-40 overflow-y-auto bg-gray-50/80 p-3 rounded-xl border border-gray-200 space-y-2.5">
+                  {items.map(item => (
+                    <label key={item._id} className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer p-1 hover:bg-white rounded transition-colors">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-gray-300 w-4 h-4 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                        checked={supplierForm.suppliedItems.includes(item._id)}
+                        onChange={(e) => {
+                          const newItems = e.target.checked 
+                            ? [...supplierForm.suppliedItems, item._id]
+                            : supplierForm.suppliedItems.filter(id => id !== item._id);
+                          setSupplierForm({...supplierForm, suppliedItems: newItems});
+                        }}
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-bold text-gray-800 leading-none">{item.name}</span>
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-0.5">{item.sku}</span>
+                      </div>
+                    </label>
+                  ))}
+                  {items.length === 0 && <p className="text-xs text-gray-400 italic text-center p-2">No inventory items available.</p>}
+                </div>
+              </div>
+
+              <button type="submit" className="btn-primary w-full border-0 shadow-purple-500/30 py-3 bg-purple-600 hover:bg-purple-700">Add Supplier</button>
+            </form>
+          </div>
+
+          {/* Vendor Directory List */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-gray-200/60 p-6 lg:col-span-2 border-t-4 border-t-gray-300">
+            <h2 className="text-lg font-black text-gray-900 tracking-tight mb-6">Active Vendor Directory</h2>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {suppliers.length === 0 ? <p className="text-sm font-medium text-gray-500 bg-gray-50 p-6 rounded-xl border border-gray-100 col-span-2 text-center">No suppliers onboarded yet.</p> :
+                suppliers.map(supplier => (
+                  <div key={supplier._id} className="border border-gray-200/60 p-5 rounded-xl bg-gray-50/50 hover:shadow-md transition-shadow">
+                    <h3 className="font-black text-lg text-gray-900">{supplier.name}</h3>
+                    <p className="text-xs font-bold text-gray-500 mt-1 mb-3">{supplier.email} • {supplier.contactPerson}</p>
+                    
+                    <div className="pt-3 border-t border-gray-200/60">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Supplies Items:</p>
+                      <div className="flex flex-wrap gap-1">
+                         {items.filter(i => (i.supplier?._id || i.supplier) === supplier._id).map(item => (
+                           <span key={item._id} className="text-[10px] bg-white border border-gray-200 text-gray-600 font-bold px-2 py-0.5 rounded shadow-sm">{item.name}</span>
+                         ))}
+                         {items.filter(i => (i.supplier?._id || i.supplier) === supplier._id).length === 0 && <span className="text-xs text-gray-400 italic">No linked items</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── APPROVALS TAB ── */}
@@ -357,9 +475,106 @@ const Procurement = () => {
           </div>
         </div>
       )}
-      
-      {/* ── INVOICES & RETURNS TABS OMITTED FOR BREVITY, BUT YOU CAN APPLY THE SAME STYLES! ── */}
-      {/* If you view the other tabs, they follow the exact same updated class structures. */}
+
+      {/* ── RETURNS TAB ── */}
+      {activeTab === 'returns' && (
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* Initiate Return */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-gray-200/60 p-6 border-t-4 border-t-rose-500 h-fit">
+            <h2 className="text-lg font-black text-gray-900 tracking-tight mb-6 flex items-center gap-2"><RotateCcw className="text-rose-500"/> Initiate Return (RTV)</h2>
+            <div className="space-y-4">
+              {rejectedGRNs.length === 0 ? (
+                <p className="text-sm font-medium text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-100">No rejected goods pending return.</p>
+              ) : (
+                rejectedGRNs.map(grn => (
+                  <div key={grn._id} className="border border-rose-100 bg-rose-50/50 p-4 rounded-xl hover:shadow-sm transition-shadow">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className="font-black text-gray-800 text-sm">GRN: {grn._id.slice(-6).toUpperCase()}</p>
+                        <p className="text-xs font-bold text-gray-500 mt-0.5">{grn.supplier?.name}</p>
+                      </div>
+                      <button onClick={() => handleInitiateRTV(grn)} className="btn-primary bg-rose-600 hover:bg-rose-700 shadow-rose-500/30 border-0 text-[10px] py-1.5 px-3 uppercase tracking-widest">Process Return</button>
+                    </div>
+                    <div className="text-xs text-rose-700 font-bold space-y-1 bg-white/60 p-2 rounded border border-rose-100/50">
+                      {grn.receivedItems.filter(i => i.rejectedQuantity > 0).map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-1"><AlertTriangle size={12}/> {item.rejectedQuantity}x {item.item?.name} rejected</div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Active Returns Log */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-gray-200/60 p-6 border-t-4 border-t-gray-300">
+            <h2 className="text-lg font-black text-gray-900 tracking-tight mb-6">Active Returns Log</h2>
+            <div className="space-y-4">
+              {returns.length === 0 ? (
+                <p className="text-sm font-medium text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-100">No active returns in the system.</p>
+              ) : (
+                returns.map(rtv => (
+                  <div key={rtv._id} className="flex justify-between items-center border border-gray-200/60 p-4 rounded-xl bg-gray-50/50 hover:bg-white transition-colors">
+                    <div>
+                      <p className="font-black text-gray-800">RTV-{rtv._id.slice(-6).toUpperCase()}</p>
+                      <p className="text-xs font-bold text-gray-500 mt-1">Expected Credit: <span className="font-black text-emerald-600">${rtv.totalCreditExpected}</span></p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${rtv.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{rtv.status}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INVOICES TAB ── */}
+      {activeTab === 'invoices' && (
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* 3-Way Match Form */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-gray-200/60 p-6 lg:col-span-1 border-t-4 border-t-emerald-500 h-fit">
+            <h2 className="text-lg font-black text-gray-900 tracking-tight mb-6 flex items-center gap-2"><Receipt className="text-emerald-500"/> Process Invoice</h2>
+            <form onSubmit={handleVerifyInvoice} className="space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Select Received Goods (GRN)</label>
+                <select required className="input font-medium" value={invoiceForm.goodsReceiptId} onChange={e => setInvoiceForm({...invoiceForm, goodsReceiptId: e.target.value})}>
+                  <option value="">-- Select GRN --</option>
+                  {allGRNs.map(grn => <option key={grn._id} value={grn._id}>GRN-{grn._id.slice(-6).toUpperCase()} ({grn.supplier?.name})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Vendor Invoice Number</label>
+                <input type="text" required className="input font-medium" value={invoiceForm.invoiceNumber} onChange={e => setInvoiceForm({...invoiceForm, invoiceNumber: e.target.value})} placeholder="INV-2026-..." />
+              </div>
+              <button type="submit" className="btn-primary w-full border-0 shadow-emerald-500/30 py-3 bg-emerald-600 hover:bg-emerald-700">Run 3-Way Match</button>
+            </form>
+          </div>
+
+          {/* Invoice History Log */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-gray-200/60 p-6 lg:col-span-2 border-t-4 border-t-gray-300">
+            <h2 className="text-lg font-black text-gray-900 tracking-tight mb-6">Invoice History</h2>
+            <div className="space-y-4">
+              {invoices.length === 0 ? <p className="text-sm font-medium text-gray-500 bg-gray-50 p-6 rounded-xl border border-gray-100 text-center">No invoices processed yet.</p> :
+                invoices.map(inv => (
+                  <div key={inv._id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center border border-gray-200/60 p-5 rounded-xl bg-gray-50/50 gap-4 hover:shadow-sm transition-shadow">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <p className="font-black text-lg text-gray-900">{inv.invoiceNumber}</p>
+                        {inv.isMatched ? 
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-black px-2 py-0.5 rounded uppercase tracking-widest flex items-center gap-1 border border-emerald-200"><ShieldCheck size={12}/> Matched</span> : 
+                          <span className="text-[10px] bg-rose-100 text-rose-800 font-black px-2 py-0.5 rounded uppercase tracking-widest flex items-center gap-1 border border-rose-200"><AlertTriangle size={12}/> Discrepancy</span>
+                        }
+                      </div>
+                      <p className="text-xs font-bold text-gray-500">Supplier: <span className="text-gray-700">{inv.supplier?.name}</span> • Total Billed: <span className="text-emerald-700 font-black">${inv.totalBilled}</span></p>
+                    </div>
+                    <span className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border ${inv.paymentStatus === 'Paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{inv.paymentStatus}</span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

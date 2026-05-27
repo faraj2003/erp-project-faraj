@@ -2,71 +2,88 @@
 const Item = require("../models/Item");
 const StockBalance = require("../models/StockBalance");
 const PurchaseOrder = require("../models/PurchaseOrder");
-const User = require("../models/User");
 
-// @desc    Run Smart Ordering Engine (Auto-Draft POs)
-// @route   POST /api/procurement/auto-order
 exports.runSmartOrdering = async (req, res) => {
   try {
-    // 1. Find all items that have a default supplier set up
-    const itemsToCheck = await Item.find({ defaultSupplier: { $ne: null } });
+    // 1. Find all items that have a defined reorder point and a primary supplier
+    const itemsToCheck = await Item.find({
+      reorderPoint: { $exists: true, $gt: 0 },
+      supplier: { $exists: true },
+    });
 
     let draftsCreated = 0;
+    const lowStockItems = [];
 
-    // We need a system user ID to attach to the 'createdBy' field.
-    // We'll just grab the first admin in the database.
-    const systemAdmin = await User.findOne({ role: "admin" });
-    if (!systemAdmin)
-      throw new Error("No admin user found to assign auto-orders to.");
-
+    // 2. Check current stock levels for each item
     for (const item of itemsToCheck) {
-      // 2. Calculate total stock across all locations for this item
-      const stocks = await StockBalance.find({ item: item._id });
-      const totalStock = stocks.reduce((acc, curr) => acc + curr.quantity, 0);
+      // Aggregate total stock across all locations for this item
+      const stockRecords = await StockBalance.find({ item: item._id });
+      const totalQuantity = stockRecords.reduce(
+        (acc, stock) => acc + stock.quantity,
+        0,
+      );
 
-      // 3. Check if stock has fallen into the RED alert zone
-      if (totalStock <= item.alertLevels.red) {
-        // 4. Prevent Spam: Check if we ALREADY ordered this item recently
-        const existingPO = await PurchaseOrder.findOne({
-          "items.item": item._id,
-          status: { $in: ["Draft", "Pending Approval", "Approved"] }, // Only check open orders
+      // 3. If stock is below reorder point, we need to order more
+      if (totalQuantity <= item.reorderPoint) {
+        lowStockItems.push({
+          item,
+          currentQuantity: totalQuantity,
+          // Order enough to reach the target/maximum stock level, default to 100 if not set
+          orderQuantity:
+            (item.targetStock || item.reorderPoint * 3) - totalQuantity,
         });
-
-        if (!existingPO) {
-          // 5. Generate the Auto-PO!
-          const poNumber = `AUTO-PO-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 9000)}`;
-
-          // Calculate total cost using the item's saved cost per unit
-          const orderQty = item.reorderQuantity || 100;
-          const unitCost = item.costPerUnit || 0;
-
-          await PurchaseOrder.create({
-            poNumber,
-            supplier: item.defaultSupplier,
-            items: [
-              {
-                item: item._id,
-                quantity: orderQty,
-                unitPrice: unitCost,
-                total: orderQty * unitCost,
-              },
-            ],
-            totalAmount: orderQty * unitCost,
-            status: "Pending Approval", // Sends it straight to manager's queue!
-            notes:
-              "🤖 SYSTEM AUTO-GENERATED: Stock level reached critical red alert threshold.",
-            createdBy: systemAdmin._id,
-          });
-
-          draftsCreated++;
-        }
       }
+    }
+
+    if (lowStockItems.length === 0) {
+      return res
+        .status(200)
+        .json({
+          success: true,
+          draftsCreated: 0,
+          message: "Inventory levels are healthy.",
+        });
+    }
+
+    // 4. Group the needed items by Supplier so we don't make 5 POs for the same vendor
+    const ordersBySupplier = {};
+    lowStockItems.forEach((stockIssue) => {
+      const supplierId = stockIssue.item.supplier.toString();
+      if (!ordersBySupplier[supplierId]) {
+        ordersBySupplier[supplierId] = [];
+      }
+      ordersBySupplier[supplierId].push({
+        item: stockIssue.item._id,
+        quantity: stockIssue.orderQuantity,
+        unitPrice: stockIssue.item.costPrice || 0, // Fallback to 0 if not set
+        total: stockIssue.orderQuantity * (stockIssue.item.costPrice || 0),
+      });
+    });
+
+    // 5. Generate Draft Purchase Orders
+    for (const [supplierId, items] of Object.entries(ordersBySupplier)) {
+      const totalAmount = items.reduce(
+        (acc, current) => acc + current.total,
+        0,
+      );
+      const poNumber = `AUTO-PO-${Date.now().toString().slice(-6)}`;
+
+      await PurchaseOrder.create({
+        poNumber,
+        supplier: supplierId,
+        items,
+        totalAmount,
+        status: "Draft", // Keep it as Draft so a manager has to approve it
+        notes: "System Generated PO via Smart Inventory Engine",
+        createdBy: req.user._id,
+      });
+      draftsCreated++;
     }
 
     res.status(200).json({
       success: true,
-      message: `Smart Scan Complete. ${draftsCreated} automatic orders generated.`,
       draftsCreated,
+      message: `Successfully drafted ${draftsCreated} orders.`,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

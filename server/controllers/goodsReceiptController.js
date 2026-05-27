@@ -77,12 +77,20 @@ exports.submitGRN = async (req, res) => {
 
     await grn.save({ session });
 
+    // Fallback for PRD-INV-037 multi-tenant architecture
+    const companyFallbackId =
+      req.user?.companyId ||
+      new mongoose.Types.ObjectId("000000000000000000000000");
+
     for (const item of receivedItems) {
       if (item.receivedQuantity > 0) {
+        // ── 1. UPDATE STOCK BALANCE ──
         let stock = await StockBalance.findOne({
-          item: item.item,
-          location: locationId,
+          itemId: item.item, // FIXED
+          locationId: locationId, // FIXED
+          companyId: companyFallbackId, // FIXED
         }).session(session);
+
         if (stock) {
           stock.quantity += item.receivedQuantity;
           await stock.save({ session });
@@ -90,25 +98,29 @@ exports.submitGRN = async (req, res) => {
           await StockBalance.create(
             [
               {
-                item: item.item,
-                location: locationId,
+                companyId: companyFallbackId, // FIXED
+                itemId: item.item, // FIXED
+                locationId: locationId, // FIXED
                 quantity: item.receivedQuantity,
+                batchNumber: batchId, // Added for traceability
               },
             ],
             { session },
           );
         }
 
+        // ── 2. LOG THE TRANSACTION ──
         await Transaction.create(
           [
             {
-              item: item.item,
-              type: "IN",
-              quantity: item.receivedQuantity,
-              reference: `GRN: ${grnNumber}`,
-              location: locationId,
-              user: req.user._id,
-              date: new Date(),
+              companyId: companyFallbackId, // FIXED: Required
+              itemId: item.item, // FIXED: Was 'item'
+              type: "addition", // FIXED: Was 'IN'
+              quantityChanged: item.receivedQuantity, // FIXED: Was 'quantity'
+              destinationLocationId: locationId, // FIXED: Was 'location'
+              performedBy: req.user._id, // FIXED: Was 'user'
+              batchNumber: batchId,
+              orderId: purchaseOrderId, // Links transaction to PO
             },
           ],
           { session },

@@ -43,6 +43,12 @@ const fetchFullInventory = async () => {
   return data.data;
 };
 
+// NEW: Fetch suppliers directly from the procurement route
+const fetchSuppliers = async () => {
+  const { data } = await api.get('/api/procurement/suppliers');
+  return data.data;
+};
+
 // ── Helpers ──
 const formatAxisLabel = (value) => {
   if (typeof value !== 'string') return value;
@@ -56,7 +62,6 @@ const SectionTitle = ({ title, subtitle }) => (
   </div>
 );
 
-// Upgraded ChartCard with Glassmorphism and Hover scaling
 const ChartCard = ({ children, className = '' }) => (
   <div className={`bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-2xl border border-gray-200/60 dark:border-gray-700/50 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 p-6 ${className}`}>
     {children}
@@ -79,7 +84,6 @@ const LiveBadge = ({ isLive }) => (
   </span>
 );
 
-// Upgraded StatCard with modern gradient accents instead of hard borders
 const StatCard = ({ label, value, unit, color }) => {
   const accentColor = color.replace('border-l-', 'bg-');
   return (
@@ -151,19 +155,20 @@ const Dashboard = () => {
   const { data: dashboardMetrics = {} } = useQuery({ queryKey: ['inventory', 'dashboard'], queryFn: fetchDashboardMetrics, enabled: isAdmin() });
   const { data: alerts = [], isLoading: loadingAlerts, isError: errorAlerts } = useQuery({ queryKey: ['inventory', 'alerts'], queryFn: fetchInventoryAlerts, enabled: isAdmin() });
   const { data: inventory = [] } = useQuery({ queryKey: ['inventory', 'full'], queryFn: fetchFullInventory, enabled: isAdmin() });
+  
+  // NEW: Fetch suppliers directly
+  const { data: suppliersList = [] } = useQuery({ queryKey: ['suppliers'], queryFn: fetchSuppliers, enabled: isAdmin() });
 
-  const uniqueSuppliers = useMemo(() => {
-    const suppliers = new Map();
-    inventory.forEach(item => {
-      if (item.supplier?.name) {
-        if (!suppliers.has(item.supplier.name)) {
-          suppliers.set(item.supplier.name, { ...item.supplier, itemsSupplied: [] });
-        }
-        suppliers.get(item.supplier.name).itemsSupplied.push(item);
-      }
+  // UPDATED: Match items to suppliers reliably
+  const suppliersWithItems = useMemo(() => {
+    return suppliersList.map(supplier => {
+      const itemsSupplied = inventory.filter(item => 
+        // Checks if it's an object ID string or a populated object
+        (item.supplier?._id || item.supplier) === supplier._id
+      );
+      return { ...supplier, itemsSupplied };
     });
-    return Array.from(suppliers.values());
-  }, [inventory]);
+  }, [suppliersList, inventory]);
 
   const handleDownloadCSV = async (endpoint, filename) => {
     try {
@@ -223,12 +228,12 @@ const Dashboard = () => {
             className="input cursor-pointer"
             onChange={(e) => {
               if(!e.target.value) return;
-              setSelectedSupplierInfo(uniqueSuppliers.find(s => s.name === e.target.value));
+              setSelectedSupplierInfo(suppliersWithItems.find(s => s._id === e.target.value));
               e.target.value = ""; 
             }}
           >
             <option value="">Search suppliers...</option>
-            {uniqueSuppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+            {suppliersWithItems.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
           </select>
         </div>
       </div>
@@ -338,7 +343,7 @@ const Dashboard = () => {
             <div className="p-6 border-b border-gray-100 flex justify-between items-start">
               <div>
                 <h3 className="text-2xl font-black text-gray-900 tracking-tight">{selectedItemInfo.name}</h3>
-                <p className="text-sm font-bold text-gray-400 mt-1 uppercase tracking-widest">{selectedItemInfo.sku} • {selectedItemInfo.type.replace('_', ' ')}</p>
+                <p className="text-sm font-bold text-gray-400 mt-1 uppercase tracking-widest">{selectedItemInfo.sku} • {selectedItemInfo.type?.replace('_', ' ')}</p>
               </div>
               <button onClick={() => setSelectedItemInfo(null)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-2 transition-colors">✕</button>
             </div>
@@ -373,14 +378,17 @@ const Dashboard = () => {
             </div>
             
             <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Items Supplied ({selectedSupplierInfo.itemsSupplied.length})</h4>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Items Supplied ({selectedSupplierInfo.itemsSupplied?.length || 0})</h4>
               <ul className="space-y-3">
-                {selectedSupplierInfo.itemsSupplied.map(item => (
+                {selectedSupplierInfo.itemsSupplied?.map(item => (
                   <li key={item._id} className="flex justify-between items-center p-3 bg-gray-50 hover:bg-gray-100 transition-colors rounded-xl border border-gray-100">
                     <span className="font-bold text-gray-800">{item.name}</span>
                     <span className="text-xs font-bold bg-white px-2 py-1 rounded text-gray-500 border border-gray-200">{item.sku}</span>
                   </li>
                 ))}
+                {(!selectedSupplierInfo.itemsSupplied || selectedSupplierInfo.itemsSupplied.length === 0) && (
+                   <p className="text-sm text-gray-400 italic">This supplier does not supply any current items.</p>
+                )}
               </ul>
             </div>
           </div>

@@ -15,7 +15,7 @@ exports.getProcurementStats = async (req, res) => {
     // 2. Get the 5 most recent truck arrivals (GRNs)
     const recentDeliveries = await GoodsReceipt.find()
       .populate("supplier", "name")
-      .sort({ arrivalTimestamp: -1 })
+      .sort({ createdAt: -1 })
       .limit(5);
 
     // 3. Find Low Stock Items (Assuming items with quantity < 50 are 'low', adjust threshold as needed)

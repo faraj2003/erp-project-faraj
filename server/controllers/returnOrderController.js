@@ -1,3 +1,4 @@
+// server/controllers/returnOrderController.js
 const ReturnOrder = require("../models/ReturnOrder");
 
 exports.createReturn = async (req, res) => {
@@ -5,7 +6,7 @@ exports.createReturn = async (req, res) => {
     const { goodsReceiptId, supplierId, returnedItems, totalCreditExpected } =
       req.body;
 
-    const rtvNumber = `RTV-${Date.now()}`;
+    const rtvNumber = `RTV-${Date.now().toString().slice(-6)}`;
 
     const rtv = new ReturnOrder({
       rtvNumber,
@@ -13,11 +14,12 @@ exports.createReturn = async (req, res) => {
       supplier: supplierId,
       returnedItems,
       totalCreditExpected,
-      initiatedBy: req.user._id,
+      status: "Pending Credit",
+      processedBy: req.user._id,
     });
 
-    const savedRTV = await rtv.save();
-    res.status(201).json({ success: true, data: savedRTV });
+    const savedReturn = await rtv.save();
+    res.status(201).json({ success: true, data: savedReturn });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -27,7 +29,6 @@ exports.getReturns = async (req, res) => {
   try {
     const returns = await ReturnOrder.find()
       .populate("supplier", "name")
-      .populate("goodsReceipt", "grnNumber")
       .sort({ createdAt: -1 });
     res.status(200).json({ success: true, data: returns });
   } catch (error) {
