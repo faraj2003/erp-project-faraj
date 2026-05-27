@@ -22,7 +22,13 @@ const registerUser = async (req, res, next) => {
       return next(new AppError("User with this email already exists", 400));
     }
 
-    const user = await User.create({ name, email, password, role });
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role,
+      companyId: req.companyId, // ← ADDED
+    });
     logger.info(`[Auth] New user registered: ${user.email} (${user.role})`);
 
     res.status(201).json({

@@ -62,14 +62,11 @@ const createUser = async (overrides = {}) => {
     email: `test_${Date.now()}@example.com`,
     password: "password123",
     role: "staff",
-    companyId: new mongoose.Types.ObjectId(), // ← ADDED
+    companyId: new mongoose.Types.ObjectId(),
     ...overrides,
   });
 };
 
-// Fix: currentStock is not a field on the Item schema — stock lives in StockBalance.
-// If currentStock is passed, we create a default Location and StockBalance record
-// so that controllers computing totalStock from balances behave correctly in tests.
 const createItem = async (overrides = {}) => {
   const { currentStock, ...itemOverrides } = overrides;
 
@@ -77,14 +74,14 @@ const createItem = async (overrides = {}) => {
     sku: `SKU-${Date.now()}`,
     name: "Test Item",
     type: "raw_material",
+    baseUnit: "kg",
+    companyId: new mongoose.Types.ObjectId(),
     minStockLevel: 10,
     unit: "kg",
     ...itemOverrides,
   });
 
-  // If a currentStock value was provided, seed a StockBalance for it
   if (currentStock !== undefined) {
-    // Find or create a reusable default test location
     let location = await Location.findOne({ name: "__test_default__" });
     if (!location) {
       location = await Location.create({
@@ -109,10 +106,20 @@ const createOrder = async (
   outputItemId,
   overrides = {},
 ) => {
+  let location = await Location.findOne({ name: "__test_default__" });
+  if (!location) {
+    location = await Location.create({
+      name: "__test_default__",
+      type: "Warehouse",
+    });
+  }
+
   return Order.create({
     orderNumber: `PO-TEST-${Date.now()}`,
     managerId,
     status: "Pending",
+    companyId: new mongoose.Types.ObjectId(),
+    locationId: location._id,
     inputs: [{ itemId: inputItemId, quantityRequired: 10 }],
     outputs: [{ itemId: outputItemId, quantityProduced: 5 }],
     ...overrides,

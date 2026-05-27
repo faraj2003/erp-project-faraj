@@ -1,15 +1,19 @@
 // server/controllers/userController.js
 const User = require("../models/User");
+const AppError = require("../utils/AppError");
 
 // @desc    Get all users for this company
 // @route   GET /api/users
 exports.getUsers = async (req, res, next) => {
   try {
-    const users = await User.find({ companyId: req.companyId })
+    const filter = { companyId: req.companyId };
+    if (req.query.role) filter.role = req.query.role;
+
+    const users = await User.find(filter)
       .populate("locationId", "name type")
       .select("-password");
 
-    res.status(200).json(users);
+    res.status(200).json({ success: true, count: users.length, data: users });
   } catch (error) {
     next(error);
   }
@@ -27,10 +31,10 @@ exports.getUserById = async (req, res, next) => {
       .select("-password");
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return next(new AppError("User not found", 404));
     }
 
-    res.status(200).json(user);
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     next(error);
   }
@@ -44,9 +48,7 @@ exports.createUser = async (req, res, next) => {
 
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({
-        message: "User already exists with this email",
-      });
+      return next(new AppError("User already exists with this email", 400));
     }
 
     const user = await User.create({
@@ -59,12 +61,15 @@ exports.createUser = async (req, res, next) => {
     });
 
     res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      locationId: user.locationId,
-      companyId: user.companyId,
+      success: true,
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        locationId: user.locationId,
+        companyId: user.companyId,
+      },
     });
   } catch (error) {
     next(error);
@@ -77,19 +82,23 @@ exports.updateUserRole = async (req, res, next) => {
   try {
     const { role } = req.body;
 
+    if (req.params.id === req.user._id.toString()) {
+      return next(new AppError("You cannot change your own role", 400));
+    }
+
     const user = await User.findOne({
       _id: req.params.id,
       companyId: req.companyId,
     });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return next(new AppError("User not found", 404));
     }
 
     user.role = role;
     await user.save();
 
-    res.status(200).json({ message: "User role updated successfully", user });
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     next(error);
   }
@@ -105,12 +114,13 @@ exports.deleteUser = async (req, res, next) => {
     });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return next(new AppError("User not found", 404));
     }
 
     await user.deleteOne();
-
-    res.status(200).json({ message: "User removed successfully" });
+    res
+      .status(200)
+      .json({ success: true, message: "User removed successfully" });
   } catch (error) {
     next(error);
   }
