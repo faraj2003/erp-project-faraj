@@ -35,6 +35,14 @@ const protect = async (req, res, next) => {
 
       return next();
     } catch (error) {
+      if (error.name === "TokenExpiredError") {
+        return next(
+          new AppError("Token has expired. Please log in again.", 401),
+        );
+      }
+      if (error.name === "JsonWebTokenError") {
+        return next(new AppError("Invalid token. Please log in again.", 401));
+      }
       return next(error);
     }
   }

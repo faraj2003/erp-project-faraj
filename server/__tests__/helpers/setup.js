@@ -62,6 +62,7 @@ const createUser = async (overrides = {}) => {
     email: `test_${Date.now()}@example.com`,
     password: "password123",
     role: "staff",
+    companyId: new mongoose.Types.ObjectId(), // ← ADDED
     ...overrides,
   });
 };
