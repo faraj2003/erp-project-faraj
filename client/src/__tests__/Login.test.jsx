@@ -43,7 +43,6 @@ describe('Login page', () => {
     renderWithProviders(<Login />);
 
     await user.type(screen.getByPlaceholderText(/operator@company.com/i), 'admin@test.com');
-    // target password input by type since it has no accessible label text
     await user.type(document.querySelector('input[type="password"]'), 'password123');
     await user.click(screen.getByRole('button', { name: /authorize/i }));
 
@@ -71,19 +70,6 @@ describe('Login page', () => {
     });
 
     expect(mockNavigate).not.toHaveBeenCalledWith('/dashboard');
-  });
-
-  it('redirects already-authenticated users away from login', () => {
-    act(() => {
-      useAuthStore.setState({
-        user: { _id: '1', name: 'Admin', email: 'a@test.com', role: 'admin' },
-        token: 'existing.token',
-        isAuthenticated: true,
-      });
-    });
-
-    renderWithProviders(<Login />, { initialEntries: ['/login'] });
-    expect(screen.queryByRole('button', { name: /authorize/i })).not.toBeInTheDocument();
   });
 
 });

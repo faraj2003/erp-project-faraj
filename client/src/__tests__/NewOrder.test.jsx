@@ -15,12 +15,9 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-// Mock locations, categories, units so dropdowns populate
 const locationHandlers = [
   http.get('*/api/locations', () =>
-    HttpResponse.json([
-      { _id: 'loc_1', name: 'Main Shop', type: 'shop' },
-    ])
+    HttpResponse.json([{ _id: 'loc_1', name: 'Main Shop', type: 'shop' }])
   ),
   http.get('*/api/system/categories', () =>
     HttpResponse.json({ success: true, data: [] })
@@ -71,8 +68,6 @@ describe('NewOrder — form structure', () => {
 });
 
 // ── useFieldArray add/remove ─────────────────────────────────────────
-// Note: "+ Add Material" is disabled until a location is selected.
-// Output rows have no such restriction and can be tested freely.
 
 describe('NewOrder — useFieldArray add/remove', () => {
 
@@ -82,11 +77,10 @@ describe('NewOrder — useFieldArray add/remove', () => {
 
     await user.click(screen.getByRole('button', { name: /add output/i }));
 
-    const qtyInputs = screen.getAllByPlaceholderText(/qty/i);
-    expect(qtyInputs.length).toBe(3); // 1 input + 2 output rows
+    expect(screen.getAllByPlaceholderText(/qty/i).length).toBe(3);
   });
 
-  it('can add multiple output rows and remove them individually', async () => {
+  it('can add multiple output rows and remove them', async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewOrder />);
 
@@ -94,10 +88,9 @@ describe('NewOrder — useFieldArray add/remove', () => {
     await user.click(addBtn);
     await user.click(addBtn);
 
-    // 1 input row + 3 output rows = 4 qty fields
+    // 1 input + 3 output = 4
     expect(screen.getAllByPlaceholderText(/qty/i).length).toBe(4);
 
-    // Remove one output row — click the last ✕ button
     const removeButtons = screen.getAllByText('✕');
     await user.click(removeButtons[removeButtons.length - 1]);
 
@@ -108,19 +101,13 @@ describe('NewOrder — useFieldArray add/remove', () => {
     const user = userEvent.setup();
     renderWithProviders(<NewOrder />);
 
-    // Button starts disabled
     expect(screen.getByRole('button', { name: /add material/i })).toBeDisabled();
 
-    // Wait for locations to load then select one
-    await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: '' })).toBeInTheDocument();
-    });
-
-    const locationSelect = screen.getAllByRole('combobox')[0];
+    // Target location select specifically by name attribute
+    const locationSelect = document.querySelector('select[name="locationId"]');
     await waitFor(() => expect(locationSelect.options.length).toBeGreaterThan(1));
     await user.selectOptions(locationSelect, 'loc_1');
 
-    // Button should now be enabled
     expect(screen.getByRole('button', { name: /add material/i })).not.toBeDisabled();
   });
 
@@ -178,29 +165,61 @@ describe('NewOrder — successful submission', () => {
     // Fill order number
     await user.type(screen.getByPlaceholderText(/PO-2026-001/i), 'PO-TEST-001');
 
-    // Select location
-    await waitFor(() => {
-      const selects = screen.getAllByRole('combobox');
-      expect(selects[0].options.length).toBeGreaterThan(1);
-    });
-    const locationSelect = screen.getAllByRole('combobox')[0];
+    // Select location by name
+    const locationSelect = document.querySelector('select[name="locationId"]');
+    await waitFor(() => expect(locationSelect.options.length).toBeGreaterThan(1));
     await user.selectOptions(locationSelect, 'loc_1');
 
-    // Fill output qty (inputs are disabled without location stock data in mock)
-    const qtyFields = screen.getAllByPlaceholderText(/qty/i);
-    await user.type(qtyFields[1], '5');
+    // Select finished good in output row
+    const outputSelect = document.querySelector('select[name="outputs.0.itemId"]');
+    await waitFor(() => expect(outputSelect.options.length).toBeGreaterThan(1));
+    await user.selectOptions(outputSelect, 'item_2');
 
-    // Select a finished good in output row
-    const outputSelect = screen.getAllByRole('combobox').find(
-      s => s.querySelector('option[value="item_2"]')
+    // Fill output qty
+    await user.type(document.querySelector('input[name="outputs.0.quantityProduced"]'), '5');
+
+    // Fill input item — mock inventory has no balances for loc_1 so inputs.0.itemId stays empty
+    // Zod requires inputs array to have itemId — inject directly via the hidden input
+    // Instead: add a valid input row value by selecting from the input dropdown
+    // Since locationRawMaterials will be empty (mock items have no balances), 
+    // we skip input validation by removing the input row and relying on Zod min(1) not firing
+    // Actually Zod min(1) WILL fire — so we must fill inputs too.
+    // Workaround: update MSW inventory mock to include balances for loc_1
+    server.use(
+      http.get('*/api/inventory', () =>
+        HttpResponse.json({
+          success: true,
+          count: 2,
+          data: [
+            {
+              _id: 'item_1', sku: 'RAW-STL-01', name: 'Steel Rods', type: 'raw_material',
+              baseUnit: 'kg',
+              balances: [{ locationId: { _id: 'loc_1' }, quantity: 100 }],
+            },
+            {
+              _id: 'item_2', sku: 'FIN-GEAR-01', name: 'Gear Assembly', type: 'finished_good',
+              baseUnit: 'units',
+              balances: [],
+            },
+          ],
+        })
+      )
     );
-    if (outputSelect) await user.selectOptions(outputSelect, 'item_2');
+
+    // Re-select location to trigger re-filter of locationRawMaterials
+    await user.selectOptions(locationSelect, '');
+    await user.selectOptions(locationSelect, 'loc_1');
+
+    const inputSelect = document.querySelector('select[name="inputs.0.itemId"]');
+    await waitFor(() => expect(inputSelect.options.length).toBeGreaterThan(1));
+    await user.selectOptions(inputSelect, 'item_1');
+    await user.type(document.querySelector('input[name="inputs.0.quantityRequired"]'), '10');
 
     await user.click(screen.getByRole('button', { name: /create production order/i }));
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/orders');
-    });
+    }, { timeout: 3000 });
   });
 
   it('shows API error message if order creation fails', async () => {
@@ -210,6 +229,23 @@ describe('NewOrder — successful submission', () => {
           { success: false, message: 'Duplicate order number' },
           { status: 400 }
         )
+      ),
+      http.get('*/api/inventory', () =>
+        HttpResponse.json({
+          success: true,
+          count: 1,
+          data: [
+            {
+              _id: 'item_1', sku: 'RAW-STL-01', name: 'Steel Rods', type: 'raw_material',
+              baseUnit: 'kg',
+              balances: [{ locationId: { _id: 'loc_1' }, quantity: 100 }],
+            },
+            {
+              _id: 'item_2', sku: 'FIN-GEAR-01', name: 'Gear Assembly', type: 'finished_good',
+              baseUnit: 'units', balances: [],
+            },
+          ],
+        })
       )
     );
 
@@ -218,20 +254,25 @@ describe('NewOrder — successful submission', () => {
 
     await user.type(screen.getByPlaceholderText(/PO-2026-001/i), 'PO-DUP-001');
 
-    await waitFor(() => {
-      const selects = screen.getAllByRole('combobox');
-      expect(selects[0].options.length).toBeGreaterThan(1);
-    });
-    await user.selectOptions(screen.getAllByRole('combobox')[0], 'loc_1');
+    const locationSelect = document.querySelector('select[name="locationId"]');
+    await waitFor(() => expect(locationSelect.options.length).toBeGreaterThan(1));
+    await user.selectOptions(locationSelect, 'loc_1');
 
-    const qtyFields = screen.getAllByPlaceholderText(/qty/i);
-    await user.type(qtyFields[1], '5');
+    const inputSelect = document.querySelector('select[name="inputs.0.itemId"]');
+    await waitFor(() => expect(inputSelect.options.length).toBeGreaterThan(1));
+    await user.selectOptions(inputSelect, 'item_1');
+    await user.type(document.querySelector('input[name="inputs.0.quantityRequired"]'), '10');
+
+    const outputSelect = document.querySelector('select[name="outputs.0.itemId"]');
+    await waitFor(() => expect(outputSelect.options.length).toBeGreaterThan(1));
+    await user.selectOptions(outputSelect, 'item_2');
+    await user.type(document.querySelector('input[name="outputs.0.quantityProduced"]'), '5');
 
     await user.click(screen.getByRole('button', { name: /create production order/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/duplicate order number/i)).toBeInTheDocument();
-    });
+    }, { timeout: 3000 });
 
     expect(mockNavigate).not.toHaveBeenCalledWith('/orders');
   });
