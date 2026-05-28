@@ -1,348 +1,235 @@
 # 🏭 FactoryFlow ERP
 
-A **full-stack, production-grade Enterprise Resource Planning (ERP) system** built for modern factory operations.  
-FactoryFlow helps manage **inventory, manufacturing orders, procurement, users, analytics, and real-time warehouse activity** from a single platform.
+A modern full-stack ERP platform for factory and warehouse operations.
 
-Built with a modern JavaScript stack featuring:
-
-- ⚡ Real-time updates with WebSockets
-- 🔐 JWT authentication & RBAC
-- 🧾 ACID-compliant MongoDB transactions
-- 🧪 Comprehensive automated testing
-- 📊 Advanced analytics dashboards
-- 🏗️ Multi-location inventory architecture
+FactoryFlow centralizes inventory, manufacturing, procurement, analytics, and user management into a single real-time system built with a scalable JavaScript stack.
 
 ---
 
-![CI](https://github.com/faraj2003/erp-project-faraj/actions/workflows/test.yml/badge.svg)
+## 🤝 Collaboration & Credits
+
+This project was developed collaboratively with:
+
+* Tejas Lahade
+* Karan Kamble
+* Hrithik Rayapati
+
+### 📂 Original Repository
+
+This repository was copied and adapted from the original repository:
+
+* [Original Repository (Symbi-Eat)](https://github.com/tejas2912/Symbi-Eat?utm_source=chatgpt.com)
+
+GitHub Profile:
+
+* [Tejas Lahade GitHub](https://github.com/tejas2912?utm_source=chatgpt.com)
+
+### 👨‍💻 My Contribution
+
+My primary contributions included:
+
+* Payment integration
+* Backend development
+* API integration and server-side functionality
+* Backend feature implementation
 
 ---
 
-# 🌐 Live Demo
+## 🌐 Live Demo
 
-## 🚀 Deployed Application
-
-- Frontend: https://erp-project-faraj.vercel.app
-- Backend API: https://erp-project-faraj.onrender.com
+* Frontend: [FactoryFlow Frontend](https://erp-project-faraj.vercel.app?utm_source=chatgpt.com)
+* Backend API: [FactoryFlow Backend API](https://erp-project-faraj.onrender.com?utm_source=chatgpt.com)
 
 ---
 
-# ✨ Features
+## ✨ Core Features
 
----
+### 📦 Inventory Management
 
-## 📦 Inventory Management
+* Multi-location inventory tracking
+* FIFO-based stock issuance
+* Inventory transfers between facilities
+* Low-stock alerts using configurable thresholds
+* Inventory adjustment workflow:
 
-- Multi-location stock tracking across warehouses and shop floors
-- FIFO-based stock issuance and inventory transfers
-- Low-stock alerts using configurable `minStockLevel`
-- Inventory adjustment workflow:
-  - Draft → Pending → Approved / Rejected
+  * Draft
+  * Pending
+  * Approved / Rejected
+* Immutable inventory transaction ledger
+* CSV export support
+* Barcode scanning using `html5-qrcode`
 
-- Immutable inventory transaction ledger
-- CSV export support for:
-  - Items
-  - Transactions
-  - Adjustments
+### 🏗️ Manufacturing Orders
 
-- Barcode scanning integration using `html5-qrcode`
+* Multi-input and output production orders
+* Order status history tracking
+* ACID-compliant manufacturing completion flow
+* Automatic stock deduction and output stock creation
+* Transaction rollback protection on insufficient inventory
 
----
+### 🛒 Procurement Management
 
-## 🏗️ Manufacturing Orders
+* Supplier management
+* RFQ workflow
+* Purchase Orders
+* Goods Receipt handling
+* Vendor invoice support
+* Return Orders
+* Historical supplier pricing
 
-- Create production orders with multiple input and output items
-- Full order status history tracking
-- ACID-compliant manufacturing completion flow
+### 📊 Analytics & Reporting
 
-### 🔒 Transaction Safety
+* Real-time operational dashboard
+* Inventory valuation metrics
+* Low-stock monitoring
+* BOM tracking
+* Cycle count auditing
+* Recharts-powered visual analytics
 
-When a manufacturing order is completed:
+### 👥 User & Access Management
 
-- Input stock is deducted
-- Output stock is added
-- Audit log entries are created
+Supported roles:
 
-All operations execute inside a **single MongoDB transaction session**.
+* `admin`
+* `manager`
+* `staff`
+* `shop_worker`
+* `shop_manager`
+* `procurement_manager`
+* `dispatch_manager`
 
-If any input item has insufficient stock:
+Features include:
 
-- `abortTransaction()` is triggered
-- All changes are rolled back
-- No partial state remains in the database
+* JWT authentication
+* Role-Based Access Control (RBAC)
+* Location-scoped visibility
+* Admin-only user provisioning
+* Role promotion & demotion
 
----
+### ⚡ Real-Time Features
 
-## 🛒 Procurement Management
+Powered by Socket.io:
 
-- Supplier management
-- Multi-supplier pricing support
-- Historical supplier price tracking
-- RFQ (Request for Quotation) workflow
-- Purchase Orders & Goods Receipt handling
-- Vendor Invoice management
-- Return Order support
-
----
-
-## 📊 Analytics & Reporting
-
-- Real-time operational dashboard
-- Inventory valuation metrics
-- Low-stock monitoring
-- Recent transaction feed
-- Recharts-powered visual analytics
-- Bill of Materials (BOM) tracking
-- Cycle Count auditing
-
----
-
-## 👥 User & Access Management
-
-### Supported Roles
-
-- `admin`
-- `manager`
-- `staff`
-- `shop_worker`
-- `shop_manager`
-- `procurement_manager`
-- `dispatch_manager`
-
-### Features
-
-- Role-Based Access Control (RBAC)
-- Admin-only user provisioning
-- Role promotion & demotion
-- Location-scoped data visibility
-- Facility-based access restrictions
+* Live inventory updates
+* Real-time stock synchronization
+* Instant UI refresh across connected clients
 
 ---
 
 ## 🔐 Security
 
-- JWT authentication
-- bcrypt password hashing
-- API rate limiting
-- Helmet security headers
-- CORS protection
-- Request validation using Zod schemas
-- Centralized error handling middleware
+* JWT authentication
+* bcrypt password hashing
+* Helmet security headers
+* API rate limiting
+* Zod request validation
+* Centralized error handling middleware
+* CORS protection
 
 ---
 
-## ⚡ Real-Time Features
+## 🧪 Automated Testing
 
-FactoryFlow uses **Socket.io** to provide:
+Comprehensive backend test coverage using:
 
-- Live inventory updates
-- Real-time stock synchronization
-- Instant UI refresh across connected clients
+* Jest
+* Supertest
+* mongodb-memory-server
 
----
+### ✅ Covered Areas
 
-# 🔑 Demo Login Credentials
+* Authentication
+* RBAC authorization
+* Inventory workflows
+* Transaction rollback integrity
+* User management
+* Manufacturing order completion
 
-To explore FactoryFlow after deployment, use the following demo admin account:
-
-```txt
-Email:    admin@factoryflow.com
-Password: AdminPassword123
-```
-
-### 👨‍💼 Admin Access Includes
-
-Using the admin account, you can:
-
-- Manage inventory
-- Create manufacturing orders
-- Access analytics dashboards
-- Manage procurement workflows
-- View all warehouse locations
-- Create and manage users
-- Assign roles and permissions
-
-### ➕ Create Your Own Users
-
-After logging in as admin, you can create additional users directly from the application:
-
-```txt
-Admin Panel → Users → Create User
-```
-
-You can assign roles such as:
-
-- `manager`
-- `staff`
-- `shop_worker`
-- `procurement_manager`
-- `dispatch_manager`
-
-This allows recruiters, testers, and developers to explore different permission levels within the ERP system.
-
-> ⚠️ These demo credentials are intended for evaluation purposes only.  
-> Change the admin password before using FactoryFlow in a real production environment.
-
----
-
-# 🧪 Automated Testing
-
-The backend includes a comprehensive automated test suite covering:
-
-- Authentication
-- Inventory
-- Orders
-- Users
-- RBAC enforcement
-- ACID transaction rollback behavior
-
-## ✅ Test Results
+### ✅ Test Results
 
 ```txt
 Test Suites: 4 passed, 4 total
 Tests:       52 passed, 52 total
 ```
 
----
-
-## Backend Testing Stack
-
-- Jest
-- Supertest
-- mongodb-memory-server
-
-Tests run against an isolated in-memory MongoDB replica set.
+GitHub Actions automatically runs tests on every push and pull request.
 
 ---
 
-## Covered Scenarios
+## 🛠️ Tech Stack
 
-### Authentication
+### Backend
 
-- JWT login flow
-- Registration
-- Invalid token handling
-- Token expiration
+| Layer          | Technology                       |
+| -------------- | -------------------------------- |
+| Runtime        | Node.js                          |
+| Framework      | Express.js v5                    |
+| Database       | MongoDB + Mongoose               |
+| Authentication | JWT + bcryptjs                   |
+| Validation     | Zod                              |
+| Real-Time      | Socket.io                        |
+| Logging        | Winston + Morgan                 |
+| Security       | Helmet, CORS, express-rate-limit |
+| Testing        | Jest, Supertest                  |
 
-### RBAC
+### Frontend
 
-- Route authorization
-- Role-based 401/403 enforcement
-
-### Inventory
-
-- CRUD operations
-- Filters & search
-- Low-stock queries
-
-### Transaction Rollback
-
-- Insufficient stock rollback
-- Multi-item rollback integrity
-- Audit log rollback validation
-
-### User Management
-
-- User creation
-- Role updates
-- Self-role modification prevention
+| Layer            | Technology               |
+| ---------------- | ------------------------ |
+| Framework        | React 19 + Vite          |
+| State Management | Zustand + React Query    |
+| Routing          | React Router v7          |
+| Styling          | Tailwind CSS v4          |
+| Charts           | Recharts                 |
+| Forms            | React Hook Form + Zod    |
+| API Client       | Axios + Socket.io-client |
+| Testing          | Vitest + RTL + MSW       |
 
 ---
 
-## 🔄 Continuous Integration
-
-GitHub Actions automatically runs the full test suite on:
-
-- Every push
-- Every pull request
-
----
-
-# 🛠️ Tech Stack
-
----
-
-## Backend
-
-| Layer          | Technology                             |
-| -------------- | -------------------------------------- |
-| Runtime        | Node.js                                |
-| Framework      | Express.js v5                          |
-| Database       | MongoDB + Mongoose                     |
-| Authentication | JWT + bcryptjs                         |
-| Validation     | Zod                                    |
-| Real-Time      | Socket.io                              |
-| Logging        | Winston + Morgan                       |
-| Security       | Helmet, CORS, express-rate-limit       |
-| Testing        | Jest, Supertest, mongodb-memory-server |
-
----
-
-## Frontend
-
-| Layer            | Technology                         |
-| ---------------- | ---------------------------------- |
-| Framework        | React 19 + Vite                    |
-| State Management | Zustand + TanStack React Query     |
-| Routing          | React Router v7                    |
-| Styling          | Tailwind CSS v4                    |
-| Charts           | Recharts                           |
-| Forms            | React Hook Form + Zod              |
-| API Client       | Axios + Socket.io-client           |
-| Notifications    | Sonner                             |
-| Testing          | Vitest, React Testing Library, MSW |
-
----
-
-# 📁 Project Structure
+## 📁 Project Structure
 
 ```bash
 erp-project-faraj/
 │
-├── client/                        # React 19 + Vite frontend
+├── client/
 │   └── src/
-│       ├── components/            # Reusable UI components
-│       ├── hooks/                 # Custom hooks
-│       ├── lib/                   # Axios + API utilities
-│       ├── pages/                 # Application pages
-│       ├── store/                 # Zustand stores
-│       └── __tests__/             # Frontend tests
+│       ├── components/
+│       ├── hooks/
+│       ├── lib/
+│       ├── pages/
+│       ├── store/
+│       └── __tests__/
 │
-└── server/                        # Express.js backend
-    ├── controllers/               # Business logic
-    ├── middleware/                # Auth & validation middleware
-    ├── models/                    # Mongoose schemas
-    ├── routes/                    # API routes
-    ├── schemas/                   # Zod schemas
-    ├── utils/                     # Utilities & logger
-    └── __tests__/                 # Backend tests
+└── server/
+    ├── controllers/
+    ├── middleware/
+    ├── models/
+    ├── routes/
+    ├── schemas/
+    ├── utils/
+    └── __tests__/
 ```
 
 ---
 
-# ⚙️ Getting Started
+## ⚙️ Getting Started
 
----
+### Prerequisites
 
-## Prerequisites
+* Node.js v18+
+* MongoDB local instance or MongoDB Atlas
 
-- Node.js v18+
-- MongoDB local instance or MongoDB Atlas cluster
-
----
-
-## 1️⃣ Clone the Repository
+### 1️⃣ Clone Repository
 
 ```bash
 git clone https://github.com/faraj2003/erp-project-faraj.git
 cd erp-project-faraj
 ```
 
----
+### 2️⃣ Configure Environment Variables
 
-## 2️⃣ Configure Environment Variables
-
-### Server (`server/.env`)
+#### Server (`server/.env`)
 
 ```env
 NODE_ENV=development
@@ -350,43 +237,37 @@ PORT=5000
 
 MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/factoryflow
 
-JWT_SECRET=your_super_secret_jwt_key_here
+JWT_SECRET=your_secret_key
 JWT_EXPIRES_IN=7d
 
 CLIENT_URL=http://localhost:5173
 ```
 
----
-
-### Client (`client/.env`)
+#### Client (`client/.env`)
 
 ```env
 VITE_API_URL=http://localhost:5000
 ```
 
----
+### 3️⃣ Install Dependencies
 
-## 3️⃣ Install Dependencies
-
-### Backend
+#### Backend
 
 ```bash
 cd server
 npm install
 ```
 
-### Frontend
+#### Frontend
 
 ```bash
 cd client
 npm install
 ```
 
----
+### 4️⃣ Run Development Servers
 
-## 4️⃣ Run the Development Servers
-
-### Backend
+#### Backend
 
 ```bash
 cd server
@@ -399,9 +280,7 @@ Runs on:
 http://localhost:5000
 ```
 
----
-
-### Frontend
+#### Frontend
 
 ```bash
 cd client
@@ -416,117 +295,92 @@ http://localhost:5173
 
 ---
 
-# 🚀 Deployment
+## 🚀 Deployment
 
-## Frontend Deployment (Vercel)
-
-The frontend is deployed using **Vercel**.
-
-Production URL:
+### Frontend (Vercel)
 
 ```txt
 https://erp-project-faraj.vercel.app
 ```
 
-### Frontend Environment Variable
+Environment variable:
 
 ```env
 VITE_API_URL=https://erp-project-faraj.onrender.com
 ```
 
----
-
-## Backend Deployment (Render)
-
-The backend API is deployed using **Render**.
-
-Production API URL:
+### Backend (Render)
 
 ```txt
 https://erp-project-faraj.onrender.com
 ```
 
-### Backend Environment Variables
+Environment variables:
 
 ```env
 NODE_ENV=production
-
-MONGO_URI=your_mongodb_connection_string
-
+MONGO_URI=your_connection_string
 JWT_SECRET=your_secret_key
 JWT_EXPIRES_IN=7d
-
 CLIENT_URL=https://erp-project-faraj.vercel.app
 ```
 
 ---
 
-# 🧪 Running Tests
+## 🔑 Demo Credentials
 
----
-
-## Backend Tests
-
-```bash
-cd server
-
-# Run all tests
-npm test
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
-npm run test:coverage
+```txt
+Email:    admin@factoryflow.com
+Password: AdminPassword123
 ```
 
+The admin account allows:
+
+* Inventory management
+* Manufacturing order creation
+* Analytics access
+* Procurement management
+* User management
+* Role assignment
+
+⚠️ Demo credentials are intended only for evaluation purposes.
+
 ---
 
-## Frontend Tests
-
-```bash
-cd client
-npm test
-```
-
----
-
-# 🔑 API Overview
+## 🔑 API Overview
 
 | Method | Endpoint                      | Access                | Description               |
 | ------ | ----------------------------- | --------------------- | ------------------------- |
-| POST   | `/api/auth/login`             | Public                | Login & receive JWT       |
-| POST   | `/api/auth/register`          | Admin                 | Register new user         |
-| GET    | `/api/inventory`              | All Roles             | List inventory items      |
+| POST   | `/api/auth/login`             | Public                | Login                     |
+| POST   | `/api/auth/register`          | Admin                 | Register user             |
+| GET    | `/api/inventory`              | All Roles             | Inventory list            |
 | POST   | `/api/inventory`              | Admin, Manager        | Create inventory item     |
-| GET    | `/api/inventory/low-stock`    | All Roles             | Get low-stock items       |
+| GET    | `/api/inventory/low-stock`    | All Roles             | Low-stock items           |
 | GET    | `/api/inventory/transactions` | Admin, Manager        | Inventory ledger          |
 | POST   | `/api/orders`                 | Staff, Manager, Admin | Create production order   |
 | PATCH  | `/api/orders/:id/status`      | Manager, Admin        | Complete production order |
-| GET    | `/api/orders`                 | All Roles             | Paginated order list      |
-| GET    | `/api/users`                  | Admin                 | List users                |
-| PATCH  | `/api/users/:id/role`         | Admin                 | Update user role          |
+| GET    | `/api/orders`                 | All Roles             | Paginated orders          |
+| GET    | `/api/users`                  | Admin                 | User list                 |
+| PATCH  | `/api/users/:id/role`         | Admin                 | Update role               |
 
 ---
 
-# 🏗️ Architecture Highlights
+## 🏗️ Architecture Highlights
 
----
+### 🔒 ACID Transaction Safety
 
-## 🔒 ACID Order Completion
-
-Production order completion uses MongoDB transactions via:
+Manufacturing order completion runs inside MongoDB transactions:
 
 ```js
 session.startTransaction();
 ```
 
-Operations performed atomically:
+Operations handled atomically:
 
-- Deduct input stock
-- Add output stock
-- Create audit logs
-- Update order status
+* Deduct input stock
+* Add output stock
+* Create audit logs
+* Update order status
 
 If any step fails:
 
@@ -534,81 +388,37 @@ If any step fails:
 abortTransaction();
 ```
 
-ensures the database remains unchanged.
+ensures rollback consistency.
 
----
+### 📦 Multi-Location Inventory Model
 
-## 📦 Multi-Location Inventory Model
-
-Stock quantities are stored separately from items using:
+Inventory quantities are separated using:
 
 ```txt
 StockBalance
 ```
 
-This allows:
+This supports:
 
-- Multiple warehouses
-- Shop floor tracking
-- Location-specific quantities
-- Scalable inventory architecture
-
----
-
-## 👀 Location-Scoped Visibility
-
-### Global Roles
-
-Can view all locations:
-
-- admin
-- manager
-- procurement_manager
-
-### Location-Bound Roles
-
-Restricted to assigned facilities:
-
-- staff
-- shop_worker
-
-Enforced directly at the query layer.
+* Multiple warehouses
+* Shop floor tracking
+* Location-based inventory visibility
+* Scalable inventory architecture
 
 ---
 
-## 🧩 Validation & Error Handling
+## 🚀 Future Improvements
 
-Every route passes through:
-
-- Zod validation middleware
-- Authentication middleware
-- Centralized error handler
-
-Consistent API error response:
-
-```json
-{
-  "success": false,
-  "error": "Validation Error",
-  "details": []
-}
-```
+* Multi-tenant support
+* Redis caching layer
+* Event-driven architecture
+* Email notifications
+* Demand forecasting
+* PDF invoice generation
+* Kubernetes deployment
 
 ---
 
-# 🚀 Future Improvements
+## 📜 License
 
-- Multi-tenant organization support
-- Advanced warehouse routing
-- Email notifications
-- Demand forecasting
-- PDF invoice generation
-- Kubernetes deployment support
-- Redis caching layer
-- Event-driven architecture with queues
-
----
-
-# 📜 License
-
-Licensed under the **MIT License**.
+Licensed under the MIT License.
