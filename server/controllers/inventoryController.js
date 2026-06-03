@@ -635,7 +635,9 @@ exports.getAdjustments = async (req, res, next) => {
   }
 };
 
-// @desc    Create an inventory adjustment
+// =======================================================
+// UPDATED: Create an inventory adjustment (RULES ENGINE)
+// =======================================================
 // @route   POST /api/inventory/adjustments
 exports.createAdjustment = async (req, res, next) => {
   try {
@@ -659,8 +661,33 @@ exports.createAdjustment = async (req, res, next) => {
       });
     }
 
-    const status = submitForReview ? "pending" : "draft";
+    // 1. Fetch Item for Financial Calculation
+    const item = await Item.findOne({
+      _id: itemId,
+      companyId: req.companyId,
+    }).lean();
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
 
+    // 2. RULES ENGINE CALCULATION
+    const costPerUnit = item.costPerUnit || 0;
+    const totalValueImpact = Math.abs(quantityChange) * costPerUnit;
+
+    let requiredApprovalLevel = "manager";
+    let status = submitForReview ? "pending" : "draft";
+
+    // Only apply rules if they are officially submitting it (not just saving a draft)
+    if (submitForReview) {
+      if (totalValueImpact <= 100) {
+        requiredApprovalLevel = "auto";
+        status = "auto_approved";
+      } else if (totalValueImpact > 1000) {
+        requiredApprovalLevel = "admin";
+      }
+    }
+
+    // 3. Create the record with the new rule data
     const adjustment = await Adjustment.create({
       companyId: req.companyId,
       itemId,
@@ -668,18 +695,59 @@ exports.createAdjustment = async (req, res, next) => {
       quantityChange,
       reason,
       status,
+      totalValueImpact,
+      requiredApprovalLevel,
       requestedBy: req.user._id,
     });
 
-    res
-      .status(201)
-      .json({ message: `Adjustment created as ${status}`, adjustment });
+    // 4. AUTO-EXECUTION LOGIC
+    if (status === "auto_approved") {
+      let balance = await StockBalance.findOne({
+        companyId: req.companyId,
+        itemId,
+        locationId,
+        zoneName: "Default",
+        rackName: "Default",
+      });
+
+      if (!balance) {
+        balance = await StockBalance.create({
+          companyId: req.companyId,
+          itemId,
+          locationId,
+          quantity: quantityChange,
+        });
+      } else {
+        balance.quantity += quantityChange;
+        await balance.save();
+      }
+
+      await Transaction.create({
+        companyId: req.companyId,
+        itemId,
+        type: "adjustment",
+        destinationLocationId: locationId,
+        quantityChanged: quantityChange,
+        newStockLevel: balance.quantity,
+        performedBy: req.user._id,
+      });
+    }
+
+    res.status(201).json({
+      message:
+        status === "auto_approved"
+          ? `System Auto-Approved: Stock adjusted by ${quantityChange}.`
+          : `Adjustment created as ${status}`,
+      adjustment,
+    });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Review (Approve/Reject) an adjustment
+// =======================================================
+// UPDATED: Review an adjustment (RULES ENGINE)
+// =======================================================
 // @route   PATCH /api/inventory/adjustments/:id/review
 exports.reviewAdjustment = async (req, res, next) => {
   try {
@@ -697,6 +765,7 @@ exports.reviewAdjustment = async (req, res, next) => {
       _id: adjustmentId,
       companyId,
     });
+
     if (!adjustment) {
       return res.status(404).json({ message: "Adjustment not found" });
     }
@@ -705,6 +774,18 @@ exports.reviewAdjustment = async (req, res, next) => {
       return res
         .status(400)
         .json({ message: "Only pending adjustments can be reviewed" });
+    }
+
+    // RULES ENGINE SECURITY CHECK:
+    // Block standard managers from approving high-value Admin-tier adjustments
+    if (
+      adjustment.requiredApprovalLevel === "admin" &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({
+        message:
+          "Access Denied: Only Admins can approve Tier 3 (>$1000) adjustments.",
+      });
     }
 
     adjustment.reviewedBy = req.user._id;

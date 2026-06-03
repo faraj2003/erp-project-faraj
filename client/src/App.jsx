@@ -15,6 +15,9 @@ import Categories from './pages/Categories';
 import Units from './pages/Units';
 import Procurement from './pages/Procurement';
 
+// ── NEW IMPORT FOR RULES ENGINE ──
+import Approvals from './pages/Approvals';
+
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
 import { useSocketStore } from './store/socketStore'; 
@@ -93,6 +96,9 @@ function App() {
               <Route path="/locations" element={<Locations />} />
               <Route path="/categories" element={<Categories />} />
               <Route path="/units" element={<Units />} />
+              
+              {/* ── NEW ROUTE ADDED HERE ── */}
+              <Route path="/approvals" element={<Approvals />} />
             </Route>
           </Route>
 

@@ -29,11 +29,23 @@ const adjustmentSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    status: {
+    // ── NEW FIELDS FOR RULES ENGINE ──
+    totalValueImpact: {
+      type: Number,
+      default: 0,
+    },
+    requiredApprovalLevel: {
       type: String,
-      enum: ["draft", "pending", "approved", "rejected"],
+      enum: ["auto", "manager", "admin"],
+      default: "manager",
+    },
+    status: {
+      // Added 'auto_approved' to the allowed statuses
+      type: String,
+      enum: ["draft", "pending", "approved", "rejected", "auto_approved"],
       default: "draft",
     },
+    // ────────────────────────────────
     requestedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

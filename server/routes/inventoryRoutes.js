@@ -87,7 +87,7 @@ router.get(
   exportAdjustmentsCSV,
 );
 
-// Adjustment Workflow Routes
+// Adjustment Workflow Routes (RULES ENGINE INTEGRATED)
 router
   .route("/adjustments")
   .get(authorize("admin", "manager"), getAdjustments)
@@ -96,7 +96,13 @@ router
     createAdjustment,
   );
 
-router.patch("/adjustments/:id/review", authorize("admin"), reviewAdjustment);
+// UPDATED: Added "manager" so they can approve Tier 2 requests.
+// Tier 3 is still protected by the backend controller logic!
+router.patch(
+  "/adjustments/:id/review",
+  authorize("admin", "manager"),
+  reviewAdjustment,
+);
 
 // --- Cycle Counting & Audits ---
 router.get("/cycle-counts", getCycleCounts);

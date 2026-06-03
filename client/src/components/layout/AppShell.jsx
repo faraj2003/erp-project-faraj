@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useInventorySocket } from '../../hooks/useInventorySocket';
+import { useQuery } from '@tanstack/react-query';
+import axios from '../../lib/axios';
 import {
   LayoutDashboard,
   Package,
@@ -16,8 +18,29 @@ import {
   LogOut,
   Sun,
   Moon,
-  Settings
+  Settings,
+  CheckSquare // <-- Imported new icon for Approvals
 } from 'lucide-react';
+
+// ── SMART BADGE COMPONENT ──
+const ApprovalsBadge = () => {
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ['adjustments', 'pending', 'count'],
+    queryFn: async () => {
+      const res = await axios.get('/api/inventory/adjustments');
+      return res.data.filter(adj => adj.status === 'pending').length;
+    },
+    refetchInterval: 30000, // Silently checks every 30 seconds
+  });
+
+  if (pendingCount === 0) return null;
+
+  return (
+    <span className="ml-auto bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+      {pendingCount}
+    </span>
+  );
+};
 
 const navItems = [
   {
@@ -49,6 +72,14 @@ const navItems = [
     path: '/adjustments',
     icon: <FileEdit size={20} />,
     roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager'], 
+  },
+  // ── NEW APPROVALS MENU ITEM ──
+  {
+    label: 'Approvals',
+    path: '/approvals',
+    icon: <CheckSquare size={20} />,
+    roles: ['manager', 'admin'],
+    hasBadge: true // Custom flag to trigger the badge
   },
   {
     label: 'Orders',
@@ -135,6 +166,8 @@ const AppShell = () => {
             >
               <span className="flex items-center justify-center text-gray-500 dark:text-gray-400">{item.icon}</span>
               {item.label}
+              {/* Render the badge only if this nav item has the flag */}
+              {item.hasBadge && <ApprovalsBadge />}
             </NavLink>
           ))}
         </nav>
