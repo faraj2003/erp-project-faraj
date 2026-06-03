@@ -7,7 +7,7 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import TransactionLedger from '../components/TransactionLedger';
 import { 
   Search, LayoutGrid, List as ListIcon, ScanBarcode, Download, Plus, 
-  ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, X 
+  ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, X, Package, History
 } from 'lucide-react';
 
 export default function Inventory() {
@@ -19,6 +19,9 @@ export default function Inventory() {
   const canCreateItem = ['admin', 'manager', 'procurement_manager'].includes(userRole);
   const canIssue = ['admin', 'manager', 'dispatch_manager', 'shop_worker', 'shop_manager'].includes(userRole);
   
+  // ── NEW: TAB STATE ──
+  const [activeTab, setActiveTab] = useState('stock'); 
+
   const [selectedItemForStock, setSelectedItemForStock] = useState(null);
   const [selectedItemForTransfer, setSelectedItemForTransfer] = useState(null);
   const [selectedItemForIssue, setSelectedItemForIssue] = useState(null);
@@ -61,7 +64,7 @@ export default function Inventory() {
   const { data: units = [] } = useQuery({ queryKey: ['units'], queryFn: async () => (await axios.get('/api/system/units')).data.data });
   const { data: itemTypes = [] } = useQuery({ queryKey: ['itemTypes'], queryFn: async () => (await axios.get('/api/system/types')).data.data });
 
-  // Mutations (Logic identical to previous version)
+  // Mutations
   const createTypeMutation = useMutation({
     mutationFn: async (name) => axios.post('/api/system/types', { name }),
     onSuccess: (res) => {
@@ -186,131 +189,160 @@ export default function Inventory() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto pb-12">
-      {/* ── HEADER & TOOLBAR ── */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-gray-800 tracking-tight">Global Inventory</h1>
-          <p className="text-sm font-medium text-gray-500 mt-1">Manage stock, catalogs, and locations</p>
-        </div>
-        
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input 
-              type="text" placeholder="Search name or SKU..." 
-              className="input pl-9"
-              value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <div className="flex bg-gray-100/80 p-1 rounded-lg border border-gray-200/60 shadow-inner">
-            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}><LayoutGrid size={18} /></button>
-            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}><ListIcon size={18} /></button>
-          </div>
-
-          <button onClick={() => setIsScannerOpen(true)} className="btn-secondary flex items-center gap-2">
-            <ScanBarcode size={18} /> Scan
-          </button>
-          
-          {canCreateItem && (
-            <>
-              <button onClick={handleExportItems} className="btn-secondary flex items-center gap-2">
-                <Download size={18} /> Export
-              </button>
-              <button onClick={() => setIsAddItemModalOpen(true)} className="btn-primary flex items-center gap-2 shadow-blue-500/30">
-                <Plus size={18} /> Product
-              </button>
-            </>
-          )}
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-black text-gray-800 tracking-tight">Inventory Management</h1>
+        <p className="text-sm font-medium text-gray-500 mt-1">Track current stock levels and view historical movements.</p>
       </div>
 
-      {/* ── INVENTORY GRID ── */}
-      <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "flex flex-col gap-4"}>
-        {filteredItems?.map((item) => {
-          let stockColor = 'text-emerald-600';
-          if (item.currentStock <= (item.alertLevels?.critical || 0)) stockColor = 'text-red-600 font-black';
-          else if (item.currentStock <= (item.alertLevels?.red || 0)) stockColor = 'text-rose-600';
-          else if (item.currentStock <= (item.alertLevels?.orange || 0)) stockColor = 'text-amber-500';
+      {/* ── TABS NAVIGATION ── */}
+      <div className="flex border-b border-gray-200 mb-8 gap-6">
+        <button
+          onClick={() => setActiveTab('stock')}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 transition-all ${
+            activeTab === 'stock' 
+              ? 'border-b-2 border-blue-600 text-blue-600' 
+              : 'text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <Package size={18} /> Current Stock
+        </button>
+        <button
+          onClick={() => setActiveTab('ledger')}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 transition-all ${
+            activeTab === 'ledger' 
+              ? 'border-b-2 border-blue-600 text-blue-600' 
+              : 'text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <History size={18} /> Transaction Ledger
+        </button>
+      </div>
 
-          return (
-            <div key={item._id} className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-gray-200/60 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
-              <div className="flex justify-between items-start mb-5">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-                    {item.name} <span className="text-xs font-mono font-bold text-gray-400 ml-2 uppercase bg-gray-100 px-2 py-1 rounded">{item.sku}</span>
-                  </h2>
-                  {item.productCompanyName && <p className="text-xs text-gray-500 mt-1.5 uppercase tracking-widest font-bold">{item.productCompanyName}</p>}
-                  
-                  <div className="flex items-center gap-2 mt-3">
-                    <span className="inline-block bg-blue-50/50 border border-blue-100 text-blue-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                      {item.type?.name || item.type?.replace('_', ' ') || "Standard"}
-                    </span>
-                    {item.categoryId?.name && (
-                      <span className="inline-block bg-purple-50/50 border border-purple-100 text-purple-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                        {item.categoryId.name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Total Stock</p>
-                  <p className={`text-2xl font-black tracking-tight ${stockColor}`}>
-                    {item.currentStock} <span className="text-xs font-bold text-gray-500 uppercase ml-0.5">{item.baseUnit}</span>
-                  </p>
-                </div>
+      {/* ── TAB CONTENT ── */}
+      {activeTab === 'stock' ? (
+        <>
+          {/* ── HEADER & TOOLBAR (Only in Stock Tab) ── */}
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-8 gap-4">
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input 
+                  type="text" placeholder="Search name or SKU..." 
+                  className="input pl-9"
+                  value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                />
               </div>
 
-              <div className="mt-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
-                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Stock by Location</h3>
-                {item.balances?.length > 0 ? (
-                  <ul className="space-y-2">
-                    {item.balances.map((balance) => (
-                      <li key={balance._id} className="flex justify-between items-center text-sm bg-white p-3 rounded-lg border border-gray-200/60 shadow-sm">
-                        <div>
-                          <span className="text-gray-800 font-bold">{balance.locationId?.name || 'Unknown'}</span>
-                          {balance.batchNumber && balance.batchNumber !== 'DEFAULT-BATCH' && (
-                            <div className="flex gap-2 mt-1.5">
-                              <span className="text-[9px] uppercase font-bold tracking-wider text-gray-500">Lot: {balance.batchNumber}</span>
-                              {balance.expiryDate && <span className="text-[9px] uppercase font-bold tracking-wider text-red-500">Exp: {new Date(balance.expiryDate).toLocaleDateString()}</span>}
-                            </div>
-                          )}
-                        </div>
-                        <span className="font-bold text-gray-800 text-base">{balance.quantity} <span className="text-[10px] text-gray-400 uppercase">{item.baseUnit}</span></span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="text-xs font-medium text-gray-400 italic">No stock found in permitted locations.</p>}
+              <div className="flex bg-gray-100/80 p-1 rounded-lg border border-gray-200/60 shadow-inner">
+                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}><LayoutGrid size={18} /></button>
+                <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}><ListIcon size={18} /></button>
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
-                {canReceive && (
-                  <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit});}} className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
-                    <ArrowDownToLine size={14} /> Receive
-                  </button>
-                )}
-                {canIssue && item.balances?.length > 0 && (
-                  <button onClick={() => {setSelectedItemForIssue(item); setIssueForm({...issueForm, unit: item.baseUnit});}} className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
-                    <ArrowUpFromLine size={14} /> Issue
-                  </button>
-                )}
-                {canTransfer && item.balances?.length > 0 && (
-                  <button onClick={() => {setSelectedItemForTransfer(item); setTransferForm({...transferForm, unit: item.baseUnit});}} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
-                    <ArrowRightLeft size={14} /> Transfer
-                  </button>
+              <div className="ml-auto flex gap-3">
+                <button onClick={() => setIsScannerOpen(true)} className="btn-secondary flex items-center gap-2">
+                  <ScanBarcode size={18} /> Scan
+                </button>
+                
+                {canCreateItem && (
+                  <>
+                    <button onClick={handleExportItems} className="btn-secondary flex items-center gap-2">
+                      <Download size={18} /> Export
+                    </button>
+                    <button onClick={() => setIsAddItemModalOpen(true)} className="btn-primary flex items-center gap-2 shadow-blue-500/30">
+                      <Plus size={18} /> Product
+                    </button>
+                  </>
                 )}
               </div>
             </div>
-          );
-        })}
-        {filteredItems?.length === 0 && <div className="text-center py-16 text-gray-400 font-medium w-full col-span-2">No items found matching your search.</div>}
-      </div>
+          </div>
 
-      <div className="mt-12">
+          {/* ── INVENTORY GRID ── */}
+          <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "flex flex-col gap-4"}>
+            {filteredItems?.map((item) => {
+              let stockColor = 'text-emerald-600';
+              if (item.currentStock <= (item.alertLevels?.critical || 0)) stockColor = 'text-red-600 font-black';
+              else if (item.currentStock <= (item.alertLevels?.red || 0)) stockColor = 'text-rose-600';
+              else if (item.currentStock <= (item.alertLevels?.orange || 0)) stockColor = 'text-amber-500';
+
+              return (
+                <div key={item._id} className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-gray-200/60 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                  <div className="flex justify-between items-start mb-5">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+                        {item.name} <span className="text-xs font-mono font-bold text-gray-400 ml-2 uppercase bg-gray-100 px-2 py-1 rounded">{item.sku}</span>
+                      </h2>
+                      {item.productCompanyName && <p className="text-xs text-gray-500 mt-1.5 uppercase tracking-widest font-bold">{item.productCompanyName}</p>}
+                      
+                      <div className="flex items-center gap-2 mt-3">
+                        <span className="inline-block bg-blue-50/50 border border-blue-100 text-blue-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                          {item.type?.name || item.type?.replace('_', ' ') || "Standard"}
+                        </span>
+                        {item.categoryId?.name && (
+                          <span className="inline-block bg-purple-50/50 border border-purple-100 text-purple-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                            {item.categoryId.name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Total Stock</p>
+                      <p className={`text-2xl font-black tracking-tight ${stockColor}`}>
+                        {item.currentStock} <span className="text-xs font-bold text-gray-500 uppercase ml-0.5">{item.baseUnit}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Stock by Location</h3>
+                    {item.balances?.length > 0 ? (
+                      <ul className="space-y-2">
+                        {item.balances.map((balance) => (
+                          <li key={balance._id} className="flex justify-between items-center text-sm bg-white p-3 rounded-lg border border-gray-200/60 shadow-sm">
+                            <div>
+                              <span className="text-gray-800 font-bold">{balance.locationId?.name || 'Unknown'}</span>
+                              {balance.batchNumber && balance.batchNumber !== 'DEFAULT-BATCH' && (
+                                <div className="flex gap-2 mt-1.5">
+                                  <span className="text-[9px] uppercase font-bold tracking-wider text-gray-500">Lot: {balance.batchNumber}</span>
+                                  {balance.expiryDate && <span className="text-[9px] uppercase font-bold tracking-wider text-red-500">Exp: {new Date(balance.expiryDate).toLocaleDateString()}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <span className="font-bold text-gray-800 text-base">{balance.quantity} <span className="text-[10px] text-gray-400 uppercase">{item.baseUnit}</span></span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p className="text-xs font-medium text-gray-400 italic">No stock found in permitted locations.</p>}
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {canReceive && (
+                      <button onClick={() => {setSelectedItemForStock(item); setAddStockForm({...addStockForm, unit: item.baseUnit});}} className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
+                        <ArrowDownToLine size={14} /> Receive
+                      </button>
+                    )}
+                    {canIssue && item.balances?.length > 0 && (
+                      <button onClick={() => {setSelectedItemForIssue(item); setIssueForm({...issueForm, unit: item.baseUnit});}} className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
+                        <ArrowUpFromLine size={14} /> Issue
+                      </button>
+                    )}
+                    {canTransfer && item.balances?.length > 0 && (
+                      <button onClick={() => {setSelectedItemForTransfer(item); setTransferForm({...transferForm, unit: item.baseUnit});}} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/60 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5">
+                        <ArrowRightLeft size={14} /> Transfer
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {filteredItems?.length === 0 && <div className="text-center py-16 text-gray-400 font-medium w-full col-span-2">No items found matching your search.</div>}
+          </div>
+        </>
+      ) : (
         <TransactionLedger />
-      </div>
+      )}
 
-      {/* ── TRANSACTION MODALS ── */}
+      {/* ── TRANSACTION MODALS (Global to component so they render over everything) ── */}
       {selectedItemForStock && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl transform transition-all">

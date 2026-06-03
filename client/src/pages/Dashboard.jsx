@@ -7,6 +7,10 @@ import api from '../lib/axios';
 import { useAuthStore } from '../store/authStore';
 import { useSocketStore } from '../store/socketStore';
 
+// ── NEW IMPORTS FOR PDF ──
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 // ── API fetchers ──
 const fetchProductionMetrics = async () => {
   const { data } = await api.get('/api/analytics/production');
@@ -156,33 +160,83 @@ const Dashboard = () => {
   const { data: alerts = [], isLoading: loadingAlerts, isError: errorAlerts } = useQuery({ queryKey: ['inventory', 'alerts'], queryFn: fetchInventoryAlerts, enabled: isAdmin() });
   const { data: inventory = [] } = useQuery({ queryKey: ['inventory', 'full'], queryFn: fetchFullInventory, enabled: isAdmin() });
   
-  // NEW: Fetch suppliers directly
   const { data: suppliersList = [] } = useQuery({ queryKey: ['suppliers'], queryFn: fetchSuppliers, enabled: isAdmin() });
 
-  // UPDATED: Match items to suppliers reliably
   const suppliersWithItems = useMemo(() => {
     return suppliersList.map(supplier => {
       const itemsSupplied = inventory.filter(item => 
-        // Checks if it's an object ID string or a populated object
         (item.supplier?._id || item.supplier) === supplier._id
       );
       return { ...supplier, itemsSupplied };
     });
   }, [suppliersList, inventory]);
 
-  const handleDownloadCSV = async (endpoint, filename) => {
+  // EXPORT EXACT CSV CONTENTS TO PDF
+  const handleExportPDF = async () => {
     try {
-      const response = await api.get(endpoint, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // 1. Fetch raw transaction data
+      const response = await api.get('/api/inventory/transactions?limit=2000');
+      const transactions = response.data.data;
+
+      if (!transactions || transactions.length === 0) {
+        return alert("No transactions found to export.");
+      }
+
+      // 2. Initialize PDF in 'landscape' mode so all 11 columns fit!
+      const doc = new jsPDF({ orientation: 'landscape' });
+      doc.setFontSize(18);
+      doc.text("Inventory Transactions Report", 14, 22);
+      doc.setFontSize(11);
+      doc.setTextColor(100);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+
+      // 3. Setup EXACT Table Columns from original CSV export
+      const tableColumn = [
+        "Txn ID", 
+        "Date", 
+        "Type", 
+        "SKU", 
+        "Item Name", 
+        "Qty Change", 
+        "New Stock", 
+        "Source", 
+        "Destination", 
+        "Batch", 
+        "User"
+      ];
+      
+      // 4. Map EXACT rows from original CSV export
+      const tableRows = transactions.map(txn => [
+        txn.transactionId || txn._id?.substring(0, 7) + '...', // Shortened ID so it fits
+        txn.createdAt ? new Date(txn.createdAt).toLocaleDateString() : 'N/A',
+        txn.type ? txn.type.toUpperCase() : 'N/A',
+        txn.itemId?.sku || 'N/A',
+        txn.itemId?.name || 'N/A',
+        txn.quantityChanged || 0,
+        txn.newStockLevel || 0,
+        txn.sourceLocationId?.name || 'N/A',
+        txn.destinationLocationId?.name || 'N/A',
+        txn.batchNumber || 'N/A',
+        txn.performedBy?.name || 'System'
+      ]);
+
+      // 5. Generate the table
+      autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 35,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2 }, // Smaller text to fit all data
+        headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+        alternateRowStyles: { fillColor: [245, 247, 250] }
+      });
+
+      // 6. Download the PDF
+      doc.save(`Inventory_Transactions_${new Date().toISOString().split('T')[0]}.pdf`);
+
     } catch (error) {
-      alert(`Failed to download ${filename}.`);
+      console.error("PDF Export Error:", error);
+      alert("Failed to download PDF.");
     }
   };
 
@@ -199,8 +253,8 @@ const Dashboard = () => {
           <p className="text-sm font-medium text-gray-500 mt-1">Live production & inventory insights</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => handleDownloadCSV('/api/inventory/export/transactions', 'inventory_transactions.csv')} className="bg-white dark:bg-gray-800 hover:bg-gray-50 text-gray-700 text-sm font-bold py-2.5 px-5 rounded-xl shadow-sm border border-gray-200/80 transition-all hover:shadow hover:-translate-y-0.5 active:translate-y-0">
-             Export Transactions
+          <button onClick={handleExportPDF} className="bg-white dark:bg-gray-800 hover:bg-gray-50 text-gray-700 text-sm font-bold py-2.5 px-5 rounded-xl shadow-sm border border-gray-200/80 transition-all hover:shadow hover:-translate-y-0.5 active:translate-y-0">
+             Export Transactions (PDF)
           </button>
           <LiveBadge isLive={isSocketLive} />
         </div>
