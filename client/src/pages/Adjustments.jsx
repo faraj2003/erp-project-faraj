@@ -9,13 +9,14 @@ export default function Adjustments() {
   
   // Permissions
   const isAdmin = userRole === 'admin';
-  const canCreate = ['admin', 'manager', 'dispatch_manager', 'shop_worker'].includes(userRole);
+  // STRICT SoD: Only operational staff can request missing stock
+  const canCreate = ['manager', 'dispatch_manager', 'shop_worker'].includes(userRole);
 
   // States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [reviewingAdjustment, setReviewingAdjustment] = useState(null);
 
-  // NEW: Cascading Filter States
+  // Cascading Filter States
   const [filterType, setFilterType] = useState('');
   const [filterDimension, setFilterDimension] = useState('');
 
@@ -161,8 +162,9 @@ export default function Adjustments() {
       pending: "bg-yellow-100 text-yellow-800",
       approved: "bg-green-100 text-green-800",
       rejected: "bg-red-100 text-red-800",
+      auto_approved: "bg-green-100 text-green-800"
     };
-    return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${styles[status]}`}>{status}</span>;
+    return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${styles[status] || 'bg-gray-100 text-gray-800'}`}>{status.replace('_', ' ')}</span>;
   };
 
   if (adjustmentsLoading) return <div className="p-6 text-gray-600">Loading Adjustments...</div>;

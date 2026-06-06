@@ -21,7 +21,7 @@ const {
   createAdjustment,
   reviewAdjustment,
   uploadItemImage,
-  getTransactions, // <-- NEW LEDGER FUNCTION IMPORTED
+  getTransactions,
   exportTransactionsCSV,
   exportItemsCSV,
   exportAdjustmentsCSV,
@@ -92,7 +92,8 @@ router
   .route("/adjustments")
   .get(authorize("admin", "manager"), getAdjustments)
   .post(
-    authorize("admin", "manager", "dispatch_manager", "shop_worker"),
+    // STRICT SoD: Only operational staff can trigger backend creation
+    authorize("manager", "dispatch_manager", "shop_worker"),
     createAdjustment,
   );
 
