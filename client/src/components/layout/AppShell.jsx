@@ -19,7 +19,7 @@ import {
   Sun,
   Moon,
   Settings,
-  CheckSquare // <-- Imported new icon for Approvals
+  CheckSquare
 } from 'lucide-react';
 
 // ── SMART BADGE COMPONENT ──
@@ -71,15 +71,16 @@ const navItems = [
     label: 'Adjustments',
     path: '/adjustments',
     icon: <FileEdit size={20} />,
-    roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager'], 
+    // Added procurement_manager so all creators can view the status of their tickets
+    roles: ['manager', 'admin', 'shop_manager', 'shop_worker', 'dispatch_manager', 'procurement_manager'], 
   },
-  // ── NEW APPROVALS MENU ITEM ──
   {
     label: 'Approvals',
     path: '/approvals',
     icon: <CheckSquare size={20} />,
-    roles: ['manager', 'admin'],
-    hasBadge: true // Custom flag to trigger the badge
+    // STRICT REVIEWER MATRIX: Only these 3 roles can see the Approvals queue
+    roles: ['admin', 'manager', 'shop_manager'],
+    hasBadge: true 
   },
   {
     label: 'Orders',

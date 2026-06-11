@@ -19,7 +19,7 @@ export default function Inventory() {
   const canCreateItem = ['admin', 'manager', 'procurement_manager'].includes(userRole);
   const canIssue = ['admin', 'manager', 'dispatch_manager', 'shop_worker', 'shop_manager'].includes(userRole);
   
-  // ── NEW: TAB STATE ──
+  // ── TAB STATE ──
   const [activeTab, setActiveTab] = useState('stock'); 
 
   const [selectedItemForStock, setSelectedItemForStock] = useState(null);
@@ -265,6 +265,11 @@ export default function Inventory() {
               else if (item.currentStock <= (item.alertLevels?.red || 0)) stockColor = 'text-rose-600';
               else if (item.currentStock <= (item.alertLevels?.orange || 0)) stockColor = 'text-amber-500';
 
+              // ── FINANCIAL CALCULATION ──
+              const unitCost = Number(item.costPerUnit) || 0;
+              const currentStockQty = Number(item.currentStock) || 0;
+              const totalAssetValue = unitCost * currentStockQty;
+
               return (
                 <div key={item._id} className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-gray-200/60 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
                   <div className="flex justify-between items-start mb-5">
@@ -285,11 +290,19 @@ export default function Inventory() {
                         )}
                       </div>
                     </div>
-                    <div className="text-right">
+                    
+                    <div className="text-right flex flex-col items-end">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Total Stock</p>
                       <p className={`text-2xl font-black tracking-tight ${stockColor}`}>
                         {item.currentStock} <span className="text-xs font-bold text-gray-500 uppercase ml-0.5">{item.baseUnit}</span>
                       </p>
+                      
+                      {/* ── NEW: FINANCIAL VALUATION METRICS ── */}
+                      <div className="mt-2 bg-gray-50/80 px-2.5 py-1.5 rounded-lg border border-gray-100/80 text-right">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Asset Value</p>
+                        <p className="text-sm font-black text-gray-800 tracking-tight">${totalAssetValue.toFixed(2)}</p>
+                        <p className="text-[9px] font-bold text-gray-400 mt-0.5">@ ${unitCost.toFixed(2)} / unit</p>
+                      </div>
                     </div>
                   </div>
 

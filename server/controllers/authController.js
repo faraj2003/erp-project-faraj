@@ -1,4 +1,4 @@
-// controllers/authController.js
+// server/controllers/authController.js
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const AppError = require("../utils/AppError");
@@ -15,7 +15,7 @@ const generateToken = (id, role) => {
 // @access  Private (Admin only)
 const registerUser = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, locationId } = req.body;
 
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -27,7 +27,8 @@ const registerUser = async (req, res, next) => {
       email,
       password,
       role,
-      companyId: req.companyId, // ← ADDED
+      companyId: req.companyId,
+      locationId: locationId || null,
     });
     logger.info(`[Auth] New user registered: ${user.email} (${user.role})`);
 
@@ -38,6 +39,7 @@ const registerUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        locationId: user.locationId, // FIX: Send location to frontend
         token: generateToken(user._id, user.role),
       },
     });
@@ -64,6 +66,7 @@ const loginUser = async (req, res, next) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          locationId: user.locationId, // FIX: Send location to frontend
           token: generateToken(user._id, user.role),
         },
       });

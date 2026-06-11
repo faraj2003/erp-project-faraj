@@ -5,7 +5,6 @@ const StockBalance = require("../models/StockBalance");
 const Transaction = require("../models/Transaction");
 const Adjustment = require("../models/Adjustment");
 
-// FIX: Allowed item types — used to validate the ?type= query param
 const VALID_ITEM_TYPES = [
   "raw_material",
   "finished_good",
@@ -14,7 +13,7 @@ const VALID_ITEM_TYPES = [
   "packaging",
 ];
 
-// Helper function to calculate multiplier based on requested unit
+// Helper to calculate unit conversions
 const getMultiplier = (item, requestedUnit) => {
   if (
     !requestedUnit ||
@@ -28,23 +27,18 @@ const getMultiplier = (item, requestedUnit) => {
   return secUnit ? secUnit.multiplierToBase : null;
 };
 
-// HELPER: Generate location-scoped query based on user role (Covers Warehouses & Shops)
+// Security Helper: Restricts queries to the user's assigned warehouse
 const getLocationScope = (user, type = "balance") => {
-  // Define roles that have GLOBAL visibility across all warehouses and shops
   const globalRoles = ["admin", "manager", "procurement_manager"];
 
-  // If the user is global, return an empty query (they see everything)
   if (globalRoles.includes(user.role)) return {};
 
-  // For everyone else (Warehouse Managers, Shop Staff, Dispatchers),
-  // they MUST be locked to their assigned locationId.
   if (!user.locationId) {
     throw new Error(
       "Access Denied: No facility/warehouse assigned to this account.",
     );
   }
 
-  // Transactions need to check both source and destination
   if (type === "transaction") {
     return {
       $or: [
@@ -54,12 +48,9 @@ const getLocationScope = (user, type = "balance") => {
     };
   }
 
-  // Balances and Adjustments check a single locationId
   return { locationId: user.locationId };
 };
 
-// @desc    Get aggregated dashboard metrics
-// @route   GET /api/inventory/dashboard
 exports.getDashboardMetrics = async (req, res, next) => {
   try {
     const companyId = req.companyId;
@@ -74,7 +65,6 @@ exports.getDashboardMetrics = async (req, res, next) => {
 
     const items = await Item.find({ companyId, isArchived: false }).lean();
 
-    // Scoped Balances
     const balances = await StockBalance.find({
       companyId,
       ...balanceScope,
@@ -94,13 +84,11 @@ exports.getDashboardMetrics = async (req, res, next) => {
 
       totalValuation += totalStockBase * (item.valuePerUnit || 0);
 
-      // Using the new Red alert level for low stock count
       if (totalStockBase <= (item.alertLevels?.red || 0)) {
         lowStockCount++;
       }
     });
 
-    // Scoped Adjustments
     const pendingAdjustments = await Adjustment.find({
       companyId,
       status: "pending",
@@ -112,7 +100,6 @@ exports.getDashboardMetrics = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Scoped Transactions
     const recentTransactions = await Transaction.find({
       companyId,
       ...transactionScope,
@@ -141,14 +128,11 @@ exports.getDashboardMetrics = async (req, res, next) => {
   }
 };
 
-// @desc    Get all items with their multi-location balances
-// @route   GET /api/inventory
 exports.getItems = async (req, res, next) => {
   try {
     const { type, search } = req.query;
     const companyId = req.companyId;
 
-    // FIX: Validate the type query param before querying — reject unknown types
     if (type && !VALID_ITEM_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
@@ -175,7 +159,6 @@ exports.getItems = async (req, res, next) => {
       return res.status(403).json({ message: err.message });
     }
 
-    // Only fetch balances for the permitted locations
     const balances = await StockBalance.find({ companyId, ...balanceScope })
       .populate("locationId", "name type")
       .lean();
@@ -216,11 +199,8 @@ exports.getItems = async (req, res, next) => {
   }
 };
 
-// @desc    Create new item
-// @route   POST /api/inventory
 exports.createItem = async (req, res, next) => {
   try {
-    // req.body will now accept dimensions object and suppliers array smoothly
     const item = await Item.create({ ...req.body, companyId: req.companyId });
     res.status(201).json({ success: true, data: item });
   } catch (error) {
@@ -228,8 +208,6 @@ exports.createItem = async (req, res, next) => {
   }
 };
 
-// @desc    Update item details
-// @route   PUT /api/inventory/:id
 exports.updateItem = async (req, res, next) => {
   try {
     const item = await Item.findOneAndUpdate(
@@ -246,8 +224,6 @@ exports.updateItem = async (req, res, next) => {
   }
 };
 
-// @desc    Soft delete / archive an item
-// @route   PATCH /api/inventory/:id/archive
 exports.archiveItem = async (req, res, next) => {
   try {
     const item = await Item.findOneAndUpdate(
@@ -264,8 +240,6 @@ exports.archiveItem = async (req, res, next) => {
   }
 };
 
-// @desc    Delete item permanently
-// @route   DELETE /api/inventory/:id
 exports.deleteItem = async (req, res, next) => {
   try {
     const itemId = req.params.id;
@@ -299,8 +273,6 @@ exports.deleteItem = async (req, res, next) => {
   }
 };
 
-// @desc    Add stock to a specific location (Receipt)
-// @route   POST /api/inventory/:id/stock
 exports.addStock = async (req, res, next) => {
   try {
     const {
@@ -321,7 +293,6 @@ exports.addStock = async (req, res, next) => {
         .json({ message: "Valid Location and positive quantity required" });
     }
 
-    // Role check: Ensure restricted users don't add stock to other locations
     const globalRoles = ["admin", "manager", "procurement_manager"];
     if (
       !globalRoles.includes(req.user.role) &&
@@ -392,8 +363,6 @@ exports.addStock = async (req, res, next) => {
   }
 };
 
-// @desc    Issue (deduct) stock using FIFO
-// @route   POST /api/inventory/:id/issue
 exports.issueStock = async (req, res, next) => {
   try {
     const { locationId, quantityToIssue, unit } = req.body;
@@ -407,7 +376,6 @@ exports.issueStock = async (req, res, next) => {
         .json({ message: "Valid Location and positive quantity required" });
     }
 
-    // Role check
     const globalRoles = ["admin", "manager", "procurement_manager"];
     if (
       !globalRoles.includes(req.user.role) &&
@@ -486,8 +454,6 @@ exports.issueStock = async (req, res, next) => {
   }
 };
 
-// @desc    Transfer stock between locations using FIFO
-// @route   POST /api/inventory/:id/transfer
 exports.transferStock = async (req, res, next) => {
   try {
     const { sourceLocationId, destinationLocationId, quantity, unit } =
@@ -506,7 +472,6 @@ exports.transferStock = async (req, res, next) => {
         .json({ message: "Source and destination cannot be the same" });
     }
 
-    // Role Check: Restricted staff can only transfer FROM their own location
     const globalRoles = ["admin", "manager", "procurement_manager"];
     if (
       !globalRoles.includes(req.user.role) &&
@@ -608,8 +573,6 @@ exports.transferStock = async (req, res, next) => {
   }
 };
 
-// @desc    Get all adjustments
-// @route   GET /api/inventory/adjustments
 exports.getAdjustments = async (req, res, next) => {
   try {
     let balanceScope;
@@ -636,13 +599,18 @@ exports.getAdjustments = async (req, res, next) => {
 };
 
 // =======================================================
-// UPDATED: Create an inventory adjustment (RULES ENGINE)
+// Create an inventory adjustment (RULES ENGINE)
 // =======================================================
-// @route   POST /api/inventory/adjustments
 exports.createAdjustment = async (req, res, next) => {
   try {
-    const { itemId, locationId, quantityChange, reason, submitForReview } =
-      req.body;
+    const {
+      itemId,
+      locationId,
+      quantityChange,
+      reason,
+      submitForReview,
+      batchNumber = "DEFAULT-BATCH",
+    } = req.body;
 
     if (!itemId || !locationId || quantityChange === undefined || !reason) {
       return res
@@ -661,7 +629,6 @@ exports.createAdjustment = async (req, res, next) => {
       });
     }
 
-    // 1. Fetch Item for Financial Calculation
     const item = await Item.findOne({
       _id: itemId,
       companyId: req.companyId,
@@ -670,14 +637,31 @@ exports.createAdjustment = async (req, res, next) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // 2. RULES ENGINE CALCULATION
+    // Prevent auto-approval deduction crashes
+    if (submitForReview && quantityChange < 0) {
+      const currentStock = await StockBalance.findOne({
+        companyId: req.companyId,
+        itemId,
+        locationId,
+        zoneName: "Default",
+        rackName: "Default",
+        batchNumber,
+      });
+
+      if (!currentStock || currentStock.quantity + quantityChange < 0) {
+        return res.status(400).json({
+          message:
+            "Cannot request deduction: The requested quantity exceeds your available physical stock in this batch.",
+        });
+      }
+    }
+
     const costPerUnit = item.costPerUnit || 0;
     const totalValueImpact = Math.abs(quantityChange) * costPerUnit;
 
     let requiredApprovalLevel = "manager";
     let status = submitForReview ? "pending" : "draft";
 
-    // Only apply rules if they are officially submitting it (not just saving a draft)
     if (submitForReview) {
       if (totalValueImpact <= 100) {
         requiredApprovalLevel = "auto";
@@ -687,7 +671,6 @@ exports.createAdjustment = async (req, res, next) => {
       }
     }
 
-    // 3. Create the record with the new rule data
     const adjustment = await Adjustment.create({
       companyId: req.companyId,
       itemId,
@@ -700,7 +683,6 @@ exports.createAdjustment = async (req, res, next) => {
       requestedBy: req.user._id,
     });
 
-    // 4. AUTO-EXECUTION LOGIC
     if (status === "auto_approved") {
       let balance = await StockBalance.findOne({
         companyId: req.companyId,
@@ -708,6 +690,7 @@ exports.createAdjustment = async (req, res, next) => {
         locationId,
         zoneName: "Default",
         rackName: "Default",
+        batchNumber,
       });
 
       if (!balance) {
@@ -716,6 +699,7 @@ exports.createAdjustment = async (req, res, next) => {
           itemId,
           locationId,
           quantity: quantityChange,
+          batchNumber,
         });
       } else {
         balance.quantity += quantityChange;
@@ -729,6 +713,7 @@ exports.createAdjustment = async (req, res, next) => {
         destinationLocationId: locationId,
         quantityChanged: quantityChange,
         newStockLevel: balance.quantity,
+        batchNumber,
         performedBy: req.user._id,
       });
     }
@@ -746,9 +731,8 @@ exports.createAdjustment = async (req, res, next) => {
 };
 
 // =======================================================
-// UPDATED: Review an adjustment (RULES ENGINE)
+// Review an adjustment (RULES ENGINE + SoD + Location Lock)
 // =======================================================
-// @route   PATCH /api/inventory/adjustments/:id/review
 exports.reviewAdjustment = async (req, res, next) => {
   try {
     const { action, reviewNotes } = req.body;
@@ -761,13 +745,26 @@ exports.reviewAdjustment = async (req, res, next) => {
         .json({ message: "Action must be 'approve' or 'reject'" });
     }
 
+    // LOCATION SCOPE CHECK: Prevents Managers from approving outside their facility
+    let balanceScope;
+    try {
+      balanceScope = getLocationScope(req.user, "balance");
+    } catch (err) {
+      return res.status(403).json({ message: err.message });
+    }
+
     const adjustment = await Adjustment.findOne({
       _id: adjustmentId,
       companyId,
+      ...balanceScope,
     });
 
     if (!adjustment) {
-      return res.status(404).json({ message: "Adjustment not found" });
+      return res
+        .status(404)
+        .json({
+          message: "Adjustment not found or access denied for your location.",
+        });
     }
 
     if (adjustment.status !== "pending") {
@@ -776,8 +773,15 @@ exports.reviewAdjustment = async (req, res, next) => {
         .json({ message: "Only pending adjustments can be reviewed" });
     }
 
-    // RULES ENGINE SECURITY CHECK:
-    // Block standard managers from approving high-value Admin-tier adjustments
+    // ── STRICT SEPARATION OF DUTIES (SoD) CHECK ──
+    if (adjustment.requestedBy.toString() === req.user._id.toString()) {
+      return res.status(403).json({
+        message:
+          "SoD Violation: You cannot review or approve an adjustment that you requested yourself.",
+      });
+    }
+
+    // TIER 3 ADMIN CHECK
     if (
       adjustment.requiredApprovalLevel === "admin" &&
       req.user.role !== "admin"
@@ -801,12 +805,14 @@ exports.reviewAdjustment = async (req, res, next) => {
 
     adjustment.status = "approved";
 
+    // Standard approvals fallback to DEFAULT-BATCH for now
     let balance = await StockBalance.findOne({
       companyId,
       itemId: adjustment.itemId,
       locationId: adjustment.locationId,
       zoneName: "Default",
       rackName: "Default",
+      batchNumber: "DEFAULT-BATCH",
     });
 
     if (!balance) {
@@ -820,6 +826,7 @@ exports.reviewAdjustment = async (req, res, next) => {
         itemId: adjustment.itemId,
         locationId: adjustment.locationId,
         quantity: adjustment.quantityChange,
+        batchNumber: "DEFAULT-BATCH",
       });
     } else {
       if (balance.quantity + adjustment.quantityChange < 0) {
@@ -840,6 +847,7 @@ exports.reviewAdjustment = async (req, res, next) => {
       destinationLocationId: adjustment.locationId,
       quantityChanged: adjustment.quantityChange,
       newStockLevel: balance.quantity,
+      batchNumber: "DEFAULT-BATCH",
       performedBy: req.user._id,
     });
 
@@ -853,8 +861,6 @@ exports.reviewAdjustment = async (req, res, next) => {
   }
 };
 
-// @desc    Get items at or below minimum stock level
-// @route   GET /api/inventory/low-stock
 exports.getLowStockItems = async (req, res, next) => {
   try {
     const companyId = req.companyId;
@@ -879,8 +885,6 @@ exports.getLowStockItems = async (req, res, next) => {
         const totalStock = itemBalances.reduce((sum, b) => sum + b.quantity, 0);
         return { ...item, currentStock: totalStock };
       })
-      // FIX: Use minStockLevel instead of alertLevels.red, and strict < not <=
-      // so that an item with currentStock === minStockLevel is NOT flagged
       .filter((item) => item.currentStock < (item.minStockLevel || 0));
 
     res.status(200).json({
@@ -893,8 +897,6 @@ exports.getLowStockItems = async (req, res, next) => {
   }
 };
 
-// @desc    Upload or replace an item's image
-// @route   POST /api/inventory/:id/image
 exports.uploadItemImage = async (req, res, next) => {
   try {
     if (!req.file) {
@@ -921,8 +923,6 @@ exports.uploadItemImage = async (req, res, next) => {
   }
 };
 
-// @desc    Get Multi-Tiered Stock Alerts
-// @route   GET /api/inventory/alerts
 exports.getInventoryAlerts = async (req, res, next) => {
   try {
     const companyId = req.companyId;
@@ -983,8 +983,6 @@ exports.getInventoryAlerts = async (req, res, next) => {
   }
 };
 
-// @desc    Get all inventory transactions (The Inventory Ledger)
-// @route   GET /api/inventory/transactions
 exports.getTransactions = async (req, res, next) => {
   try {
     const companyId = req.companyId;
@@ -1027,8 +1025,6 @@ exports.getTransactions = async (req, res, next) => {
     next(error);
   }
 };
-
-// ── EXPORT ENDPOINTS ──
 
 exports.exportTransactionsCSV = async (req, res, next) => {
   try {

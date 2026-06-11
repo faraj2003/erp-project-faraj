@@ -89,6 +89,14 @@ function App() {
             </Route>
           </Route>
 
+          {/* ── THE FIX: Protected — Approvers only ── */}
+          {/* Pulled out into its own block so shop_managers don't get access to Locations/Categories accidentally */}
+          <Route element={<ProtectedRoute roles={['admin', 'manager', 'shop_manager']} />}>
+            <Route element={<AppShell />}>
+              <Route path="/approvals" element={<Approvals />} />
+            </Route>
+          </Route>
+
           {/* Protected — manager + admin only */}
           <Route element={<ProtectedRoute roles={['manager', 'admin']} />}>
             <Route element={<AppShell />}>
@@ -96,9 +104,6 @@ function App() {
               <Route path="/locations" element={<Locations />} />
               <Route path="/categories" element={<Categories />} />
               <Route path="/units" element={<Units />} />
-              
-              {/* ── NEW ROUTE ADDED HERE ── */}
-              <Route path="/approvals" element={<Approvals />} />
             </Route>
           </Route>
 

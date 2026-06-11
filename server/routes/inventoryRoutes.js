@@ -3,8 +3,10 @@ const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/upload");
+const validateRequest = require("../middleware/validateRequest");
+const { createItemSchema } = require("../schemas/inventory.schema");
 
-// Destructure all controllers, including the new getTransactions
+// Destructure all controllers
 const {
   getDashboardMetrics,
   getItems,
@@ -47,7 +49,11 @@ router.use(protect);
 router
   .route("/")
   .get(getItems)
-  .post(authorize("admin", "manager", "procurement_manager"), createItem);
+  .post(
+    authorize("admin", "manager", "procurement_manager"),
+    validateRequest(createItemSchema),
+    createItem,
+  );
 
 // ── IMPORTANT: All named sub-routes MUST be registered before /:id ──
 
@@ -63,7 +69,7 @@ router.get("/boms", getBOMs);
 router.post("/boms", createBOM);
 router.post("/boms/:id/assemble", assembleBOM);
 
-// --- INVENTORY LEDGER ROUTE (TASK 1) ---
+// --- INVENTORY LEDGER ROUTE ---
 router.get(
   "/transactions",
   authorize("admin", "manager", "inventory_controller"),
@@ -87,21 +93,34 @@ router.get(
   exportAdjustmentsCSV,
 );
 
-// Adjustment Workflow Routes (RULES ENGINE INTEGRATED)
+// ── ADJUSTMENT WORKFLOW ROUTES (Strict RBAC Enforced) ──
 router
   .route("/adjustments")
-  .get(authorize("admin", "manager"), getAdjustments)
+  .get(
+    authorize(
+      "admin",
+      "manager",
+      "shop_manager",
+      "procurement_manager",
+      "dispatch_manager",
+      "shop_worker",
+    ),
+    getAdjustments,
+  )
   .post(
-    // STRICT SoD: Only operational staff can trigger backend creation
-    authorize("manager", "dispatch_manager", "shop_worker"),
+    authorize(
+      "manager",
+      "shop_manager",
+      "procurement_manager",
+      "dispatch_manager",
+      "shop_worker",
+    ),
     createAdjustment,
   );
 
-// UPDATED: Added "manager" so they can approve Tier 2 requests.
-// Tier 3 is still protected by the backend controller logic!
 router.patch(
   "/adjustments/:id/review",
-  authorize("admin", "manager"),
+  authorize("admin", "manager", "shop_manager"),
   reviewAdjustment,
 );
 
