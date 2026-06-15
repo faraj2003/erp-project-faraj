@@ -1,6 +1,22 @@
 # FactoryFlow ERP 🏭
 
-A full-stack, production-grade Enterprise Resource Planning (ERP) system designed for modern factory operations. FactoryFlow centralizes inventory management, manufacturing workflows, procurement processes, and real-time warehouse activity into a single, secure, and scalable platform.
+A full-stack, production-grade Enterprise Resource Planning (ERP) system designed for modern factory operations. FactoryFlow centralizes inventory, manufacturing, procurement, and warehouse activity into a single, secure, and scalable platform.
+
+---
+
+## 🚀 Highlights
+
+* ACID-compliant manufacturing workflows using MongoDB transactions
+* Real-time dashboards powered by WebSockets
+* End-to-end procurement pipeline
+* Multi-warehouse inventory with FIFO logic
+* Zero-trust security with RBAC and XSS protection
+
+---
+
+## 🎯 Problem Solved
+
+FactoryFlow addresses real-world manufacturing challenges such as inventory mismanagement, fragmented procurement systems, and lack of real-time operational visibility. It provides a unified platform to streamline factory workflows and improve decision-making.
 
 ---
 
@@ -20,43 +36,36 @@ Password: AdminPassword123
 
 ### Smart Inventory & BOM
 
-* Multi-warehouse inventory tracking using strict FIFO logic
+* Multi-warehouse inventory tracking using FIFO logic
 * Bill of Materials (BOM) kitting and automated stock deductions
-* Cycle count audits for inventory accuracy
+* Cycle count audits for improved accuracy
 
 ### Full Procurement Pipeline
 
-* End-to-end supply chain workflow:
+* Complete workflow:
   RFQs → Supplier Bids → Purchase Orders → Goods Receipts → 3-Way Invoice Matching
 
 ### ACID-Compliant Manufacturing Orders
 
-* MongoDB session-based transactions ensure data consistency
-* Automatic rollback of orders when raw materials are insufficient
-* Prevents partial or inconsistent database states
+* MongoDB session-based transactions ensure consistency
+* Automatic rollback if raw materials are insufficient
+* Prevents partial or corrupted data states
 
 ### Real-Time Analytics
 
-* Live dashboards powered by socket-based updates
-* Production monitoring, stock valuation trends, and alert systems
+* Live dashboards with socket-based updates
+* Production tracking, stock valuation, and alerts
 
 ---
 
-## 🛡️ Enterprise-Grade Security Architecture
+## 🛡️ Security Architecture
 
-FactoryFlow is built using a zero-trust security model to ensure maximum data protection.
+Built with a zero-trust approach:
 
-* **Authentication Security:**
-  API rate limiting prevents brute-force attacks, and single-session enforcement blocks concurrent logins
-
-* **Data Integrity:**
-  Global XSS sanitization and regex-based hardware validation (e.g., barcode scanners) prevent malicious inputs
-
-* **Role-Based Access Control (RBAC):**
-  Fine-grained permission system with strict hierarchy to prevent privilege escalation
-
-* **Server-Side Validation:**
-  Critical business and financial rules are enforced on the backend, including fraud detection and transaction validation
+* API rate limiting and single-session enforcement
+* Global XSS sanitization and input validation
+* Strict Role-Based Access Control (RBAC)
+* Backend-enforced financial and business rules
 
 ---
 
@@ -66,11 +75,11 @@ FactoryFlow is built using a zero-trust security model to ensure maximum data pr
 
 * Node.js 20
 * Express v5
-* MongoDB with Mongoose 9
+* MongoDB + Mongoose 9
 * Socket.io
 * JWT Authentication
 * Zod Validation
-* Helmet & XSS-Clean
+* Helmet, XSS-Clean
 
 ### Frontend
 
@@ -90,14 +99,14 @@ FactoryFlow is built using a zero-trust security model to ensure maximum data pr
 
 ## 🔐 Role & Permission Matrix
 
-| Role                  | Access Level                                 |
-| --------------------- | -------------------------------------------- |
-| super_admin           | Full system control; can create other admins |
-| admin                 | Global system access and reporting           |
-| manager               | Approves adjustments and purchase orders     |
-| procurement_manager   | Handles vendor and procurement workflows     |
-| dispatch_manager      | Manages outbound logistics (location-scoped) |
-| shop_manager / worker | Restricted to assigned warehouse             |
+| Role                  | Access Level                                |
+| --------------------- | ------------------------------------------- |
+| super_admin           | Full system control; creates other admins   |
+| admin                 | Global access and reporting                 |
+| manager               | Approves adjustments and purchase orders    |
+| procurement_manager   | Manages vendor and procurement workflows    |
+| dispatch_manager      | Handles outbound logistics (location-based) |
+| shop_manager / worker | Restricted to assigned warehouse            |
 
 ---
 
@@ -113,8 +122,8 @@ npm run install:all
 
 ### 2. Environment Setup
 
-* Copy `.env.example` files in both `/server` and `/client`
-* Add your MongoDB URI and JWT secrets
+* Copy `.env.example` files in `/server` and `/client`
+* Add MongoDB URI and JWT secrets
 
 ### 3. Seed & Run
 
@@ -131,7 +140,7 @@ npm run dev
 
 ## 🧪 Automated Testing
 
-FactoryFlow uses an in-memory MongoDB replica set to run full backend integration tests without affecting a real database.
+Uses an in-memory MongoDB replica set for safe integration testing.
 
 ```bash
 # Backend Tests
