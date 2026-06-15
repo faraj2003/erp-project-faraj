@@ -301,8 +301,8 @@ export default function Adjustments() {
                       {getStatusBadge(adj.status)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {/* ── UPDATED: Only authorized reviewers see the button ── */}
-                      {canReview && adj.status === 'pending' && (
+                      {/* ── UPDATED: Only authorized reviewers see the button, AND enforces SoD visually ── */}
+                      {canReview && adj.status === 'pending' && adj.requestedBy?._id !== user?._id && (
                         <button 
                           onClick={() => setReviewingAdjustment(adj)}
                           className="text-blue-600 hover:text-blue-900 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-1 rounded"
