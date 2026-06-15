@@ -6,7 +6,7 @@ const helmet = require("helmet");
 const cors = require("cors");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
-const xss = require("xss-clean"); // NEW: Import xss-clean for global sanitization
+const xss = require("xss"); // Using base xss package for Express v5 compatibility
 const errorHandler = require("./middleware/errorHandler");
 const procurementRoutes = require("./routes/procurementRoutes");
 
@@ -20,23 +20,42 @@ const createApp = () => {
   // Body Parser
   app.use(express.json());
 
-  // NEW: Apply XSS sanitization to all incoming request bodies (Point 2)
-  app.use(xss());
+  // Express v5 Compatible XSS Sanitization Middleware
+  // Safely mutates object properties in-place to avoid triggering the read-only getter crash
+  const sanitizeData = (data) => {
+    if (typeof data === "string") return xss(data);
+    if (typeof data === "object" && data !== null) {
+      Object.keys(data).forEach((key) => {
+        data[key] = sanitizeData(data[key]);
+      });
+    }
+    return data;
+  };
+
+  app.use((req, res, next) => {
+    if (req.body) sanitizeData(req.body);
+    if (req.query) sanitizeData(req.query);
+    if (req.params) sanitizeData(req.params);
+    next();
+  });
 
   if (process.env.NODE_ENV !== "test") {
     app.use(morgan("dev"));
   }
 
+  // Global API Limiter
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000,
+    max: process.env.NODE_ENV === "test" ? 1000 : 1000,
     standardHeaders: false,
     legacyHeaders: false,
   });
 
+  // Login-Specific Limiter (Brute Force Protection)
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5, // Point 4: Strict brute-force prevention
+    // Allow 100 attempts during automated testing, but keep the strict 5 limit for production/dev
+    max: process.env.NODE_ENV === "test" ? 100 : 5,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -47,8 +66,7 @@ const createApp = () => {
 
   app.use("/api/", apiLimiter);
 
-  // PRD-INV-005/006: Serve uploaded item images as static files.
-  // In production, replace this with a CDN or cloud storage URL in the controller.
+  // Serve uploaded item images as static files
   app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
   app.get("/health", (req, res) =>
