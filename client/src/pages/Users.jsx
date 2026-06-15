@@ -3,9 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '../lib/axios';
 import { toast } from 'sonner';
 import { Users as UsersIcon, Shield, MapPin, Mail, UserPlus } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
 
 export default function Users() {
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+
   const [formData, setFormData] = useState({
     name: '', email: '', password: '', role: 'staff', locationId: '', 
   });
@@ -79,7 +83,8 @@ export default function Users() {
             <select name="role" value={formData.role} onChange={handleChange} className="input pl-9 cursor-pointer font-medium text-gray-700">
               <option value="staff">General Staff</option>
               <option value="manager">System Manager</option>
-              <option value="admin">System Admin</option>
+              {isSuperAdmin && <option value="admin">System Admin</option>}
+              {isSuperAdmin && <option value="super_admin">Super Admin</option>}
               <option value="shop_manager">Shop Manager</option>
               <option value="shop_worker">Shop Worker</option>
               <option value="procurement_manager">Procurement Manager</option>

@@ -59,6 +59,12 @@ const loginUser = async (req, res, next) => {
 
     if (user && (await user.matchPassword(password))) {
       logger.info(`[Auth] User logged in: ${user.email}`);
+
+      // NEW: Generate token and update the active session in the database
+      const token = generateToken(user._id, user.role);
+      user.activeToken = token;
+      await user.save(); // Invalidates any previous token
+
       res.status(200).json({
         success: true,
         data: {
@@ -67,7 +73,7 @@ const loginUser = async (req, res, next) => {
           email: user.email,
           role: user.role,
           locationId: user.locationId, // FIX: Send location to frontend
-          token: generateToken(user._id, user.role),
+          token: token, // Send the newly generated token
         },
       });
     } else {

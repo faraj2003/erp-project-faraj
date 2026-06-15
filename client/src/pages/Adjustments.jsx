@@ -31,8 +31,8 @@ export default function Adjustments() {
   const canReview = ['admin', 'manager', 'shop_manager'].includes(userRole);
   
   // Admins can see the export button
-  const isAdmin = userRole === 'admin';
-  const isGlobalRole = ['admin', 'manager', 'procurement_manager'].includes(userRole);
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+  const isGlobalRole = ['admin', 'super_admin', 'manager', 'procurement_manager'].includes(userRole);
 
   // Safely extract the user's location ID directly from the auth store
   const userLocationId = useMemo(() => {
@@ -90,9 +90,14 @@ export default function Adjustments() {
   // ── MUTATIONS ──
   const createMutation = useMutation({
     mutationFn: async ({ payload }) => axios.post('/api/inventory/adjustments', payload),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['adjustments'] });
       closeCreateModal();
+      
+      // Show the specific backend warning/success message 
+      if (response && response.data && response.data.message) {
+        alert(response.data.message);
+      }
     },
     onError: (error) => alert(error.response?.data?.message || "Failed to create adjustment")
   });

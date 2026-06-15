@@ -24,6 +24,7 @@ const userSchema = new mongoose.Schema(
         "staff",
         "manager",
         "admin",
+        "super_admin",
         "shop_manager",
         "shop_worker",
         "procurement_manager",
@@ -42,6 +43,11 @@ const userSchema = new mongoose.Schema(
     locationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
+      default: null,
+    },
+    // NEW: Track the currently active session
+    activeToken: {
+      type: String,
       default: null,
     },
   },

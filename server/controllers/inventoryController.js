@@ -27,6 +27,14 @@ const getMultiplier = (item, requestedUnit) => {
   return secUnit ? secUnit.multiplierToBase : null;
 };
 
+// Security Helper (Point 2): Strictly validate barcode/batch inputs to prevent injection
+const isValidBarcodeFormat = (input) => {
+  if (!input) return true; // Ignore if empty/optional
+  // Only allow alphanumeric characters, hyphens, and underscores. No spaces or script characters.
+  const barcodeRegex = /^[a-zA-Z0-9-_]+$/;
+  return barcodeRegex.test(input);
+};
+
 // Security Helper: Restricts queries to the user's assigned warehouse
 const getLocationScope = (user, type = "balance") => {
   const globalRoles = ["admin", "manager", "procurement_manager"];
@@ -281,7 +289,19 @@ exports.addStock = async (req, res, next) => {
       unit,
       batchNumber = "DEFAULT-BATCH",
       expiryDate = null,
+      scannedBarcode,
     } = req.body;
+
+    // Security (Point 2): Strictly validate barcode/batch data
+    if (
+      !isValidBarcodeFormat(batchNumber) ||
+      !isValidBarcodeFormat(scannedBarcode)
+    ) {
+      return res.status(400).json({
+        message:
+          "Security Violation: Invalid barcode or batch format detected. Scan rejected.",
+      });
+    }
 
     const itemId = req.params.id;
     const companyId = req.companyId;
@@ -365,7 +385,16 @@ exports.addStock = async (req, res, next) => {
 
 exports.issueStock = async (req, res, next) => {
   try {
-    const { locationId, quantityToIssue, unit } = req.body;
+    const { locationId, quantityToIssue, unit, scannedBarcode } = req.body;
+
+    // Security (Point 2): Strictly validate barcode data
+    if (scannedBarcode && !isValidBarcodeFormat(scannedBarcode)) {
+      return res.status(400).json({
+        message:
+          "Security Violation: Invalid barcode format detected. Scan rejected.",
+      });
+    }
+
     const itemId = req.params.id;
     const companyId = req.companyId;
     const rawQty = Number(quantityToIssue);
@@ -440,7 +469,7 @@ exports.issueStock = async (req, res, next) => {
         sourceLocationId: locationId,
         quantityChanged: deductQty,
         newStockLevel: balance.quantity,
-        batchNumber: balance.batchNumber,
+        batchNumber: balance.batchNumber, // Preserves the exact batch number typed/scanned
         expiryDate: balance.expiryDate,
         performedBy: req.user._id,
       });
@@ -456,8 +485,22 @@ exports.issueStock = async (req, res, next) => {
 
 exports.transferStock = async (req, res, next) => {
   try {
-    const { sourceLocationId, destinationLocationId, quantity, unit } =
-      req.body;
+    const {
+      sourceLocationId,
+      destinationLocationId,
+      quantity,
+      unit,
+      scannedBarcode,
+    } = req.body;
+
+    // Security (Point 2): Strictly validate barcode data
+    if (scannedBarcode && !isValidBarcodeFormat(scannedBarcode)) {
+      return res.status(400).json({
+        message:
+          "Security Violation: Invalid barcode format detected. Scan rejected.",
+      });
+    }
+
     const itemId = req.params.id;
     const companyId = req.companyId;
     const rawQty = Number(quantity);
@@ -559,7 +602,7 @@ exports.transferStock = async (req, res, next) => {
         destinationLocationId,
         quantityChanged: transferQty,
         newStockLevel: destBal.quantity,
-        batchNumber: sourceBal.batchNumber,
+        batchNumber: sourceBal.batchNumber, // Preserves the exact batch number typed/scanned
         expiryDate: sourceBal.expiryDate,
         performedBy: req.user._id,
       });
@@ -610,7 +653,19 @@ exports.createAdjustment = async (req, res, next) => {
       reason,
       submitForReview,
       batchNumber = "DEFAULT-BATCH",
+      scannedBarcode,
     } = req.body;
+
+    // Security (Point 2): Strictly validate barcode/batch data
+    if (
+      !isValidBarcodeFormat(batchNumber) ||
+      !isValidBarcodeFormat(scannedBarcode)
+    ) {
+      return res.status(400).json({
+        message:
+          "Security Violation: Invalid barcode or batch format detected. Scan rejected.",
+      });
+    }
 
     if (!itemId || !locationId || quantityChange === undefined || !reason) {
       return res
@@ -663,9 +718,48 @@ exports.createAdjustment = async (req, res, next) => {
     let status = submitForReview ? "pending" : "draft";
 
     if (submitForReview) {
-      if (totalValueImpact <= 100) {
-        requiredApprovalLevel = "auto";
-        status = "auto_approved";
+      // Security (Point 5): The $0 Price Glitch Fix
+      // Force manual review for items with no price defined
+      if (costPerUnit === 0) {
+        requiredApprovalLevel = "manager";
+        status = "pending";
+        reason += " (System Flag: Item has $0 or missing price)";
+      } else if (totalValueImpact <= 100) {
+        // Security (Point 5): Micro-transaction Spam Fix
+        // Set a daily maximum limit ($500) so people can't spam small requests.
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const todaysAutoApprovals = await Adjustment.aggregate([
+          {
+            $match: {
+              requestedBy: req.user._id,
+              status: "auto_approved",
+              createdAt: { $gte: startOfDay },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalValue: { $sum: "$totalValueImpact" },
+            },
+          },
+        ]);
+
+        const dailyAutoApprovedTotal =
+          todaysAutoApprovals.length > 0
+            ? todaysAutoApprovals[0].totalValue
+            : 0;
+
+        if (dailyAutoApprovedTotal + totalValueImpact > 500) {
+          // Limit exceeded, force to manager review
+          requiredApprovalLevel = "manager";
+          status = "pending";
+        } else {
+          // Under the $500 daily limit, safe to auto-approve
+          requiredApprovalLevel = "auto";
+          status = "auto_approved";
+        }
       } else if (totalValueImpact > 1000) {
         requiredApprovalLevel = "admin";
       }
@@ -713,7 +807,7 @@ exports.createAdjustment = async (req, res, next) => {
         destinationLocationId: locationId,
         quantityChanged: quantityChange,
         newStockLevel: balance.quantity,
-        batchNumber,
+        batchNumber, // Preserves exact batch number
         performedBy: req.user._id,
       });
     }
@@ -722,7 +816,7 @@ exports.createAdjustment = async (req, res, next) => {
       message:
         status === "auto_approved"
           ? `System Auto-Approved: Stock adjusted by ${quantityChange}.`
-          : `Adjustment created as ${status}`,
+          : `Adjustment created as ${status}. ${status === "pending" && totalValueImpact <= 100 ? "Daily auto-approval limit exceeded or price missing." : ""}`,
       adjustment,
     });
   } catch (error) {
@@ -760,11 +854,9 @@ exports.reviewAdjustment = async (req, res, next) => {
     });
 
     if (!adjustment) {
-      return res
-        .status(404)
-        .json({
-          message: "Adjustment not found or access denied for your location.",
-        });
+      return res.status(404).json({
+        message: "Adjustment not found or access denied for your location.",
+      });
     }
 
     if (adjustment.status !== "pending") {

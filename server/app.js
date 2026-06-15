@@ -6,15 +6,22 @@ const helmet = require("helmet");
 const cors = require("cors");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
+const xss = require("xss-clean"); // NEW: Import xss-clean for global sanitization
 const errorHandler = require("./middleware/errorHandler");
 const procurementRoutes = require("./routes/procurementRoutes");
 
 const createApp = () => {
   const app = express();
 
+  // Security Headers
   app.use(helmet());
   app.use(cors({ origin: process.env.CLIENT_URL || "*", credentials: true }));
+
+  // Body Parser
   app.use(express.json());
+
+  // NEW: Apply XSS sanitization to all incoming request bodies (Point 2)
+  app.use(xss());
 
   if (process.env.NODE_ENV !== "test") {
     app.use(morgan("dev"));
@@ -29,7 +36,7 @@ const createApp = () => {
 
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 10,
+    max: 5, // Point 4: Strict brute-force prevention
     standardHeaders: true,
     legacyHeaders: false,
     message: {

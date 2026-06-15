@@ -46,6 +46,19 @@ exports.createUser = async (req, res, next) => {
   try {
     const { name, email, password, role, locationId } = req.body;
 
+    // NEW (Point 7): Privilege Escalation Prevention
+    // Only a super_admin can create an admin or another super_admin
+    if (role === "admin" || role === "super_admin") {
+      if (req.user.role !== "super_admin") {
+        return next(
+          new AppError(
+            "Security Violation: Only a Super Admin can create other admin accounts.",
+            403,
+          ),
+        );
+      }
+    }
+
     const userExists = await User.findOne({ email });
     if (userExists) {
       return next(new AppError("User already exists with this email", 400));
@@ -95,6 +108,31 @@ exports.updateUserRole = async (req, res, next) => {
       return next(new AppError("User not found", 404));
     }
 
+    // NEW (Point 7): Privilege Escalation Prevention
+    // 1. A regular admin cannot modify an existing admin's account
+    if (user.role === "admin" || user.role === "super_admin") {
+      if (req.user.role !== "super_admin") {
+        return next(
+          new AppError(
+            "Security Violation: You do not have permission to modify existing admin accounts.",
+            403,
+          ),
+        );
+      }
+    }
+
+    // 2. A regular admin cannot promote a lower-tier user UP to admin
+    if (role === "admin" || role === "super_admin") {
+      if (req.user.role !== "super_admin") {
+        return next(
+          new AppError(
+            "Security Violation: Only a Super Admin can promote a user to an admin role.",
+            403,
+          ),
+        );
+      }
+    }
+
     user.role = role;
     await user.save();
 
@@ -115,6 +153,18 @@ exports.deleteUser = async (req, res, next) => {
 
     if (!user) {
       return next(new AppError("User not found", 404));
+    }
+
+    // Prevent regular admins from deleting admins
+    if (user.role === "admin" || user.role === "super_admin") {
+      if (req.user.role !== "super_admin") {
+        return next(
+          new AppError(
+            "Security Violation: You cannot delete an admin account.",
+            403,
+          ),
+        );
+      }
     }
 
     await user.deleteOne();

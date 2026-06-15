@@ -24,6 +24,17 @@ const protect = async (req, res, next) => {
         );
       }
 
+      // NEW: Single Active Session Check
+      // If the token provided doesn't match the database token, log them out.
+      if (req.user.activeToken && req.user.activeToken !== token) {
+        return next(
+          new AppError(
+            "Session invalid. You have been logged in from another device.",
+            401,
+          ),
+        );
+      }
+
       // PRD-INV-037: Make companyId available on every request so all
       // controllers can scope their queries without repeating themselves.
       if (!req.user.companyId) {
