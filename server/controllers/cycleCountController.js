@@ -2,6 +2,7 @@
 const CycleCount = require("../models/CycleCount");
 const StockBalance = require("../models/StockBalance");
 const Item = require("../models/Item");
+const Adjustment = require("../models/Adjustment"); // ── NEW: Added Adjustment Model
 
 // @desc    Get all cycle counts
 // @route   GET /api/inventory/cycle-counts
@@ -134,12 +135,32 @@ exports.completeCycleCount = async (req, res, next) => {
       (i) => i.actualQuantity === null,
     );
     if (uncountedItems.length > 0) {
-      return res
-        .status(400)
-        .json({
-          message: `Cannot complete. ${uncountedItems.length} item(s) have not been counted.`,
-        });
+      return res.status(400).json({
+        message: `Cannot complete. ${uncountedItems.length} item(s) have not been counted.`,
+      });
     }
+
+    // ── NEW LOGIC: Generate Adjustments for Variances ──
+    const adjustmentsToCreate = [];
+    for (const item of cycleCount.itemsToCount) {
+      if (item.variance !== 0) {
+        adjustmentsToCreate.push({
+          companyId: cycleCount.companyId,
+          itemId: item.itemId,
+          locationId: cycleCount.locationId,
+          quantityChange: item.variance, // Applies the exact positive or negative offset
+          reason: `System Auto-Adjustment: Cycle Count Audit [${cycleCount.name}] variance.`,
+          requestedBy: req.user._id,
+          status: "pending", // Routes straight into your rules engine
+        });
+      }
+    }
+
+    // Bulk insert all generated adjustments to avoid multiple DB calls
+    if (adjustmentsToCreate.length > 0) {
+      await Adjustment.insertMany(adjustmentsToCreate);
+    }
+    // ───────────────────────────────────────────────────
 
     cycleCount.status = "completed";
     cycleCount.completedAt = Date.now();
@@ -147,13 +168,11 @@ exports.completeCycleCount = async (req, res, next) => {
 
     await cycleCount.save();
 
-    res
-      .status(200)
-      .json({
-        success: true,
-        message: "Cycle count completed successfully.",
-        data: cycleCount,
-      });
+    res.status(200).json({
+      success: true,
+      message: "Cycle count completed successfully.",
+      data: cycleCount,
+    });
   } catch (error) {
     next(error);
   }
